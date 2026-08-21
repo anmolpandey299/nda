@@ -91,8 +91,32 @@ clean tree, an H100, Python 3.13.x, torch 2.13.0+cu130, `torch.cuda.is_available
 capability (9, 0), and the sealed image metadata; then runs `make env-capture`,
 `make gpu-smoke`, `make preflight` and `make bundle-verify`.
 
-On success `manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json` exists,
-`ENVIRONMENT_LOCK_SHA256` is resolved, and S00-B is closed. Commit that manifest.
+### Step 4 — close S00-B
+
+The bootstrap ends with two verification steps that are deliberately different in kind:
+
+```text
+11  make bundle-verify   source artifacts are hash-bound; runtime evidence is verified by
+                         re-derivation, so producing the environment manifest and rewriting
+                         readiness during this run cannot invalidate the bundle that
+                         authorised the run
+12  make closure         writes stage_acceptance/S00/12_S00B_CLOSURE.json recording the
+                         environment identity, the readiness state and the SHA256 of every
+                         artifact this run produced; it writes nothing unless the identity
+                         resolved
+```
+
+Then bring the runtime evidence back and make it the described state:
+
+```bash
+git add manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json \
+        artifacts/p0_pre/P0_PRE_READINESS.json \
+        stage_acceptance/S00/12_S00B_CLOSURE.json
+git commit -m "S00-B: hardware closure evidence"
+make bundle && make bundle-verify
+```
+
+S00-B is closed when `ENVIRONMENT_LOCK_SHA256` is resolved and the closure record exists.
 
 ### Still unmeasured after S00-B
 

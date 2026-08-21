@@ -80,15 +80,25 @@ echo "== 10. ordered gate =="
 make preflight || fail "preflight failed"
 
 echo "== 11. bundle verification =="
-make bundle-verify || fail "bundle does not describe the current code"
+# Source artifacts are hash-bound; runtime evidence is verified by re-derivation, so
+# producing the environment manifest and the readiness file during this run cannot
+# invalidate the bundle that authorised the run [AUTH: 01 §16; 02 §C6].
+make bundle-verify || fail "source drift: the bundle does not describe the current code"
+
+echo "== 12. S00-B closure record =="
+make closure || fail "closure incomplete; the environment identity did not resolve"
 
 cat <<SUMMARY
 
 S00B_BOOTSTRAP = PASS
-  commit  $HEAD
-  image   $IMG_DIGEST
-  gpu     $GPU_NAME
-  torch   $TORCH
+  commit   $HEAD
+  image    $IMG_DIGEST
+  gpu      $GPU_NAME
+  torch    $TORCH
+  closure  stage_acceptance/S00/12_S00B_CLOSURE.json
+
+Commit the environment manifest, the readiness file and the closure record, then regenerate
+the bundle so the closure state is the described one.
 Throughput, peak VRAM and the BF16 tolerance are measured by their own runs and stay
 TBD_REQUIRES_HARDWARE until then [AUTH: 00 §0.2.4; 01 §30; 03 §8].
 SUMMARY

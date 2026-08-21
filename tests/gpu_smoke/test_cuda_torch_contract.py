@@ -10,9 +10,13 @@ environment manifest [AUTH: 03 §8].
 from __future__ import annotations
 
 import importlib.util
+import json
+from pathlib import Path
 
 import pytest
+from preflight import is_environment_lock_manifest
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 H100_COMPUTE_CAPABILITY = (9, 0)  # NVIDIA H100 SXM, fixed by 01 §9, not a measurement
 
 
@@ -58,8 +62,43 @@ def test_bf16_forward_path_without_quantization() -> None:
 
 @requires_h100
 def test_run_to_run_tolerance_is_measured_not_assumed() -> None:
-    """01 §30 requires nondeterminism sources to be documented and the tolerance measured."""
-    pytest.skip(
-        "NOT_RUN(NO_GPU): the tolerance is measured by scripts/capture_environment.sh "
-        "on the H100 image and recorded as bf16_fp32_tolerance [AUTH: 01 §30; plan §5.7]"
+    """01 §30 requires the nondeterminism source documented AND the run-to-run tolerance
+    measured. Capture now performs both, so a real H100 run must exercise the recorded
+    contract instead of skipping past it."""
+    env_dir = REPO_ROOT / "manifests" / "environments"
+    captured = (
+        [p for p in sorted(env_dir.glob("*.json")) if is_environment_lock_manifest(p)]
+        if env_dir.is_dir()
+        else []
     )
+    if not captured:
+        pytest.skip("NOT_RUN(NO_GPU): run `make env-capture` before the gpu-smoke lane")
+
+    manifest = json.loads(captured[0].read_text(encoding="utf-8"))
+
+    tolerance = manifest["bf16_fp32_tolerance"]
+    assert isinstance(tolerance, dict), "the tolerance must be measured, not a placeholder"
+    assert tolerance["measurement"] == "bf16_vs_fp32_matmul"
+    assert tolerance["autocast_enabled"] is False, "AMP must not decide the arithmetic [01 §10]"
+    max_abs = tolerance["max_abs_error"]
+    assert isinstance(max_abs, float) and max_abs > 0.0, (
+        "a real BF16 cast loses precision; a zero tolerance means nothing was measured"
+    )
+    assert 0.0 <= tolerance["mean_abs_error"] <= max_abs
+
+    sources = manifest["nondeterminism_sources"]
+    assert isinstance(sources, dict)
+    assert isinstance(sources["cudnn_version"], int)
+    for flag in (
+        "cudnn_deterministic",
+        "cudnn_benchmark",
+        "cuda_matmul_allow_tf32",
+        "deterministic_algorithms",
+    ):
+        assert isinstance(sources[flag], bool), flag
+    run = sources["run_to_run"]
+    assert isinstance(run, dict)
+    assert run["repeats"] >= 2, "a run-to-run tolerance needs repeated passes [01 §30]"
+    for key in ("float32_max_abs_delta", "bfloat16_max_abs_delta"):
+        assert isinstance(run[key], float) and run[key] >= 0.0, key
+    assert isinstance(run["deterministic_observed"], bool)

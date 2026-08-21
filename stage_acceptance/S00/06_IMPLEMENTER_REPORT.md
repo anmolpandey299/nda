@@ -368,6 +368,60 @@ nvidia-smi capture, GPU/driver capture and fail-closed semantics were ported unc
 are re-tested.
 
 
+## 3F. S00-B closure repair — runtime evidence vs immutable source
+
+Bootstrap gates 1-10 passed on the real H100; gate 11 failed with
+`manifest hash mismatch: artifacts/p0_pre/P0_PRE_READINESS.json`.
+
+Root cause, and it was structural rather than incidental: `05_ARTIFACT_MANIFEST.json` held a
+single flat `files` hash set covering every tracked and untracked file. `P0_PRE_READINESS.json`
+is written by preflight step 8 [plan §11] and the environment manifest by capture [plan §5.6],
+so both change the instant S00-B succeeds. Hash-binding them to a bundle that necessarily
+predates the hardware made a *correct* bootstrap incapable of passing.
+
+### Lifecycle, now explicit
+
+```text
+source artifacts   everything that defines the code and configuration.
+                   HASH-BOUND. Any change is source drift and fails bundle-verify.
+runtime evidence   artifacts/p0_pre/P0_PRE_READINESS.json, artifacts/p0_pre/evidence/**,
+                   manifests/environments/<64hex>.json, S00B_IMAGE_RECORD.json.
+                   Produced by execution. Listed and hashed at bundle time so provenance is
+                   kept, but verified by RE-DERIVATION rather than hash equality.
+closure            `make closure` writes 12_S00B_CLOSURE.json after a real run: environment
+                   identity, readiness state and the SHA256 of everything the run produced.
+                   It writes nothing unless the identity resolved, mirroring the
+                   transactional rule capture already follows.
+```
+
+Re-derivation is a *stronger* check than the hash it replaces, not a weaker one. A hash only
+proves a file has not changed since bundling; re-derivation recomputes readiness from the
+provenance-bound evidence records and the environment manifest and compares. A hand-edited
+`P0_PRE_READY = true` passes a re-hash and fails re-derivation — there is a regression test
+for exactly that. Environment manifests are likewise checked by recomputing their identity
+and matching it against their own filename.
+
+`code_drift` excludes the same runtime-evidence paths, so committing hardware evidence does
+not make the bundle stale, while any source change still does.
+
+### The skipped GPU-smoke test
+
+`test_run_to_run_tolerance_is_measured_not_assumed` was an obsolete pre-hardware skip: it
+skipped unconditionally with the reason "the tolerance is measured by capture", which became
+false once capture actually measured it. Repaired to exercise the real 01 §30 contract — it
+reads the published environment manifest and asserts the BF16/FP32 measurement is present
+with `autocast_enabled = False` and a strictly positive `max_abs_error`, that the cuDNN and
+TF32 determinism flags are recorded as typed values, and that `run_to_run` carries at least
+two repeats with real deltas. A valid H100 run should now report 8 passed, 0 skipped.
+
+### Environment identity
+
+`aa64d5f2f87854f1527b79d2a11009cdf7f183b3cc8977e6a0db4a8ad90dbe9e` is evidence from one
+specific H100 environment. It is deliberately not hardcoded anywhere in `src/`, `scripts/`,
+`tests/` or `configs/`, and a test enforces that. The manifest itself was produced on the pod
+and is not in this repository; it is committed by the Step 4 flow above.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.

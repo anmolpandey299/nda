@@ -12,6 +12,7 @@ from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any
 
+import build_bundle
 import capture_environment as cap
 import numpy as np
 import pytest
@@ -477,3 +478,86 @@ def test_n_forged_identity_cannot_produce_a_manifest(tmp_path: Path) -> None:
     with pytest.raises(cap.CaptureError):
         cap.publish(tmp_path, manifest, out_dir=tmp_path / "env")
     assert not (tmp_path / "env").exists() or list((tmp_path / "env").glob("*.json")) == []
+
+
+# ============================================================== runtime-evidence lifecycle
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "artifacts/p0_pre/P0_PRE_READINESS.json",
+        "artifacts/p0_pre/evidence/lanes/backend_contract.json",
+        "artifacts/p0_pre/evidence/software_gate/SCORER_ENGINE.json",
+        "manifests/environments/" + "a" * 64 + ".json",
+        "manifests/environments/S00B_IMAGE_RECORD.json",
+    ],
+)
+def test_execution_products_are_runtime_evidence(rel: str) -> None:
+    assert build_bundle.is_runtime_evidence(rel)
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "src/scoring/__init__.py",
+        "scripts/preflight.py",
+        "pyproject.toml",
+        "uv.lock",
+        "Dockerfile",
+        "specs/01_EXECUTION_STACK_LOCK_v2.md",
+        "manifests/environments/AI_ENGINEERING_STACK_S00.json",
+        "manifests/environments/S00B_HARDWARE_PROBE.json",
+        "artifacts/p0_pre/.gitkeep",
+    ],
+)
+def test_committed_source_is_not_runtime_evidence(rel: str) -> None:
+    """Immutable source must stay hash-bound; only execution products are exempt."""
+    assert not build_bundle.is_runtime_evidence(rel)
+
+
+def test_bundle_manifest_separates_the_two_classes(repo_root: Path) -> None:
+    manifest = json.loads(
+        (repo_root / "stage_acceptance/S00/05_ARTIFACT_MANIFEST.json").read_text("utf-8")
+    )
+    source = manifest["source_artifacts"]
+    runtime = manifest["runtime_evidence"]
+    assert isinstance(source, dict) and isinstance(runtime, dict)
+    assert "artifacts/p0_pre/P0_PRE_READINESS.json" in runtime
+    assert "artifacts/p0_pre/P0_PRE_READINESS.json" not in source
+    for rel in ("pyproject.toml", "uv.lock", "Dockerfile", "scripts/capture_environment.py"):
+        assert rel in source, rel
+        assert rel not in runtime, rel
+    assert set(source) & set(runtime) == set()
+    assert "files" not in manifest, "the flat hash set was the root cause"
+
+
+def test_readiness_keeps_its_provenance_rather_than_being_dropped(repo_root: Path) -> None:
+    """Requirement: readiness must not be excluded from all provenance to silence the
+    mismatch. It is still listed and still hashed at bundle time."""
+    manifest = json.loads(
+        (repo_root / "stage_acceptance/S00/05_ARTIFACT_MANIFEST.json").read_text("utf-8")
+    )
+    digest = manifest["runtime_evidence"]["artifacts/p0_pre/P0_PRE_READINESS.json"]
+    assert isinstance(digest, str) and len(digest) == 64
+
+
+def test_observed_environment_identity_is_not_hardcoded(repo_root: Path) -> None:
+    """The identity from one H100 run is evidence, never a universal constant."""
+    observed = "aa64d5f2f87854f1527b79d2a11009cdf7f183b3cc8977e6a0db4a8ad90dbe9e"
+    for directory in ("src", "scripts", "tests", "configs"):
+        base = repo_root / directory
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if path.is_file() and path.suffix in {".py", ".sh", ".yaml", ".yml", ".json"}:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                if path.name == "test_s00b_env_capture.py":
+                    continue
+                assert observed not in text, f"{path} hardcodes a specific environment id"
+
+
+def test_incomplete_closure_writes_no_record(tmp_path: Path) -> None:
+    """An incomplete run must leave no artifact that could be mistaken for closure."""
+    repo = tmp_path / "r"
+    (repo / "stage_acceptance" / "S00").mkdir(parents=True)
+    assert build_bundle.main(["--root", str(repo), "--stage", "S00", "--closure"]) == 1
+    assert not (repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json").exists()

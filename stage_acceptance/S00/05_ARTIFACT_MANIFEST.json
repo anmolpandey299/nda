@@ -1,9 +1,20 @@
 {
   "authority": "01 \u00a716, \u00a726(13), \u00a745",
-  "described_commit": "22e6b067c185e22753926327d5d238c25ce121d0",
-  "environment_lock_sha256": "TBD_REQUIRES_HARDWARE",
-  "file_count": 113,
-  "files": {
+  "described_commit": "9fb1cad787c8c71863cad8f20e26c82e54d8ff07",
+  "note": "source_artifacts are hash-bound: any change is source drift. runtime_evidence is produced by execution (preflight step 8, H100 capture, the image build), so it is recorded with its hash at bundle time but verified by re-derivation, not by hash equality; otherwise a correct S00-B run would invalidate its own bundle.",
+  "runtime_evidence": {
+    "artifacts/p0_pre/P0_PRE_READINESS.json": "0979b9c3c62cff91f381032c86a408b5c54cdcbc46a56c0e1a898e1d953cd202",
+    "manifests/environments/S00B_IMAGE_RECORD.json": "9fb37cf586696805fa8c371392e80747b645bd66f4a40ce76204fc9d66cd762c"
+  },
+  "runtime_evidence_count": 2,
+  "self_referential_exclusions": [
+    "stage_acceptance/S00/00_INDEX.md",
+    "stage_acceptance/S00/02_CHANGED_FILES.txt",
+    "stage_acceptance/S00/02_DIFF.patch",
+    "stage_acceptance/S00/05_ARTIFACT_MANIFEST.json"
+  ],
+  "source_artifact_count": 111,
+  "source_artifacts": {
     ".dockerignore": "931f9ee8689f46e2b8150eabddca668de917cc3a1a89fa3445b88e1ad37ad5e6",
     ".githooks/pre-commit": "7be8ead6c117646e5ea72a302388764d7e1f4eb066c60b42974eaa2a56823d15",
     ".githooks/pre-push": "72471a78327444d3f77c6a05e85b16d1e32ba53a67788ca72eef8eb9e722daf9",
@@ -15,11 +26,10 @@
     "03_REVIEW_GOVERNANCE_LOCK.md": "7bf2048067d09a2b72333f381c07bb4863baae3fd70f03e153e07af5d99691bc",
     "CLAUDE.md": "8a088e429079828d2377c20aeee54e3ca6a6a8694dae94df7e4436ecf4ed5e85",
     "Dockerfile": "dca5d7f39099718a2243368af5724c9b8927baf39ae52404e34bc74946d64b74",
-    "Makefile": "fa17dd87a5d44d43d2e89d46269e1372182c5e30101746631fb7173be4921ca1",
+    "Makefile": "bb8983924e5a726eda0ba71bea1034c52534475515768ed79914eb7bfe1d441b",
     "README.md": "7494d330a09d1fce1cc67f600c47834d4203282d8beff6e6f937d5a3ee587601",
     "artifacts/cache/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "artifacts/p0_pre/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "artifacts/p0_pre/P0_PRE_READINESS.json": "0979b9c3c62cff91f381032c86a408b5c54cdcbc46a56c0e1a898e1d953cd202",
     "artifacts/runs/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "configs/attacks/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "configs/data/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -33,7 +43,6 @@
     "manifests/environments/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "manifests/environments/AI_ENGINEERING_STACK_S00.json": "5993ebc612bcf063bccd9a6c3b0830e903769e77a577cf1f487c61bf10fe47de",
     "manifests/environments/S00B_HARDWARE_PROBE.json": "7ea75537d7c162fa6f630f49e11c6a12da0f4b0bc1f15c2f6346a3365daf414a",
-    "manifests/environments/S00B_IMAGE_RECORD.json": "7084f4c7424d77790de4bdb38e5abfa05b998034b61164fecb15f8b75adcd875",
     "manifests/models/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "manifests/runs/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "pyproject.toml": "c9b59382566f036efe3010500ca0a4a3cc0a5d84c15ddcd2a73d0946fc352d3e",
@@ -45,8 +54,8 @@
     "reviews/S00/STAGE_IMPLEMENTATION_REPORT.md": "331cf97bab328c754136664c8caf8adf5a056049e516fedcaa9476d474b14dbc",
     "reviews/S00/deferred.md": "a9651a5c7e9db591af1b7f9b9e483969d1e6da8afcea46d2305266128f2561b4",
     "reviews/S00/scratch/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "scripts/bootstrap_runpod_s00b.sh": "c28454c68a4745944a743ece04b48427785b5b89a5e5a91d72b3217ed27c0035",
-    "scripts/build_bundle.py": "77490c3142256094137a744c0ee63361f0748d64e295e34bc29b1f67f2b2b67c",
+    "scripts/bootstrap_runpod_s00b.sh": "dfc1200be7eae5bcfbd04f302635eafa234d085cd05c272bc75e194f1a1839cd",
+    "scripts/build_bundle.py": "9bd21e4dececd21a62bea10f142170405c74503061dc894599275217ee98a7ca",
     "scripts/build_science_image.sh": "9d2ba9150f4d2b3458b37520cd84d55d5b6e8b075131a95d30cd7c3046901ddb",
     "scripts/capture_environment.py": "ae82de12345a8c9df30cff9788283eae549c10e4a7a2415c20bb23a5dbbc9677",
     "scripts/capture_environment.sh": "ffa91f742f693c39a9d4d2e06b74363df311086a871910b4fdb20ec9d1dd3ffc",
@@ -105,25 +114,18 @@
     "tests/golden/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/gpu_smoke/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/gpu_smoke/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "tests/gpu_smoke/test_cuda_torch_contract.py": "cdaaa1a26b0017e6047465466a3cd160a99bf49dc660988c66a233c2f7e6ed01",
+    "tests/gpu_smoke/test_cuda_torch_contract.py": "45418205d68f97df3f7e4df4148849fb76dd8fab96037ca11c331e61a51a3503",
     "tests/gpu_smoke/test_env_capture_contract.py": "f027cc3aedd27285201ca20f360d01a2a4a257b0530706804952959fb02b755a",
     "tests/integration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "tests/integration/test_s00_command_surface.py": "31666b25d1a57bfe7a4a02dbf5c77a186b71295ab99fdbee0a19cd8b773c80c6",
+    "tests/integration/test_s00_command_surface.py": "279811884dc3f0ccbf23e5ab4727d550f5ffc81b74a6831b0c971e09591c1c92",
     "tests/synthetic/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/synthetic/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/unit/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/unit/test_s00_final_fixes.py": "27a38150b100999df10ab1e61ac854aa16653e32faa4cb650375320d344a9cda",
     "tests/unit/test_s00_invariants.py": "f0a78baff2bd0e9a0b07e7e6bcc3dbbc9e4b5e7c6e16800fd8d96824b7d300d9",
-    "tests/unit/test_s00b_env_capture.py": "cab4a73618d27d79d5fab989da9512b88fcef989f9d425443ba08a951aa1f62b",
+    "tests/unit/test_s00b_env_capture.py": "c34dd51dac14b67b0c7fada4a0c08ce306ea94105608fb869d6eae5dac542209",
     "tests/unit/test_s00b_science_image.py": "5b05b839b3b1bdc887be3762f79d5627cafbd0ad7f5d556f308a5e3c9813a346",
     "uv.lock": "5f04ad7f26682f1d114f0e0b5e6a252f99d582db47f33843862bca58511206cf"
   },
-  "note": "File hashes describe the tree at `described_commit`. A manifest cannot hash itself or the commit containing it, so the four self-referential bundle files are excluded and `build_bundle.py --verify` instead proves zero code drift between described_commit and HEAD.",
-  "self_referential_exclusions": [
-    "stage_acceptance/S00/00_INDEX.md",
-    "stage_acceptance/S00/02_CHANGED_FILES.txt",
-    "stage_acceptance/S00/02_DIFF.patch",
-    "stage_acceptance/S00/05_ARTIFACT_MANIFEST.json"
-  ],
   "stage": "S00"
 }

@@ -16,6 +16,7 @@ import pytest
 from _helpers import valid_record, write_environment_manifest, write_evidence
 from preflight import (
     PREFLIGHT_STEPS,
+    TBD,
     DirtyProductionTreeError,
     GateOutcome,
     Step,
@@ -24,6 +25,7 @@ from preflight import (
     compute_readiness,
     production_tree_dirty,
     run_steps,
+    write_readiness,
 )
 
 MAKE_TARGETS = (
@@ -367,9 +369,9 @@ def test_fix8_manifest_hash_tampering_is_detected(tmp_path: Path) -> None:
     build_bundle.generate(repo, "S00")
     manifest_path = repo / "stage_acceptance" / "S00" / "05_ARTIFACT_MANIFEST.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["files"]["src/mod.py"] = "0" * 64
+    manifest["source_artifacts"]["src/mod.py"] = "0" * 64
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    assert any("hash mismatch" in p for p in build_bundle.verify(repo, "S00"))
+    assert any("source artifact hash mismatch" in p for p in build_bundle.verify(repo, "S00"))
 
 
 # ------------------------------------------------------------------ FIX 9: reviewer worktree
@@ -429,3 +431,108 @@ def test_s00b_bootstrap_never_reaches_capture_off_hardware(repo_root: Path) -> N
     assert "S00B_BOOTSTRAP = PASS" not in combined
     assert "== 8. environment capture" not in combined
     assert any(gate in combined for gate in ("working tree is dirty", "nvidia-smi absent"))
+
+
+# ------------------------------------------------- S00-B closure: runtime evidence lifecycle
+def _prehardware_repo(tmp_path: Path) -> Path:
+    """A repo in exactly the state S00-B starts from: committed bundle, no hardware yet."""
+    repo = tmp_path / "r"
+    (repo / "src").mkdir(parents=True)
+    (repo / "artifacts" / "p0_pre").mkdir(parents=True)
+    (repo / "manifests" / "environments").mkdir(parents=True)
+    (repo / "stage_acceptance" / "S00").mkdir(parents=True)
+    _git(repo, "init", "-b", "stage/test", "-q")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "src" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    write_readiness(repo, compute_readiness(repo, computed_by="DECLARED_AT_S00"))
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "pre-hardware")
+    build_bundle.generate(repo, "S00")
+    return repo
+
+
+def test_closure_prehardware_bundle_is_valid_before_the_h100_run(tmp_path: Path) -> None:
+    repo = _prehardware_repo(tmp_path)
+    assert build_bundle.verify(repo, "S00") == []
+    readiness = json.loads((repo / "artifacts/p0_pre/P0_PRE_READINESS.json").read_text("utf-8"))
+    assert readiness["environment_lock_sha256"] == TBD
+
+
+def test_closure_correct_hardware_run_does_not_invalidate_its_own_bundle(
+    tmp_path: Path,
+) -> None:
+    """The exact reported failure: capture + preflight legitimately rewrite readiness, and
+    the pre-hardware bundle then reported `manifest hash mismatch`, making a correct
+    bootstrap structurally incapable of passing."""
+    repo = _prehardware_repo(tmp_path)
+    before = (repo / "artifacts/p0_pre/P0_PRE_READINESS.json").read_bytes()
+
+    identity = write_environment_manifest(repo)  # step 8, capture
+    write_readiness(repo, compute_readiness(repo))  # preflight step 8
+
+    after = (repo / "artifacts/p0_pre/P0_PRE_READINESS.json").read_bytes()
+    assert after != before, "the run must genuinely change readiness, else this proves nothing"
+    assert json.loads(after)["environment_lock_sha256"] == identity
+
+    assert build_bundle.verify(repo, "S00") == [], "a correct hardware run invalidated itself"
+
+
+def test_closure_source_drift_is_still_caught_after_a_hardware_run(tmp_path: Path) -> None:
+    repo = _prehardware_repo(tmp_path)
+    write_environment_manifest(repo)
+    write_readiness(repo, compute_readiness(repo))
+    assert build_bundle.verify(repo, "S00") == []
+
+    (repo / "src" / "mod.py").write_text("x = 2\n", encoding="utf-8")
+    problems = build_bundle.verify(repo, "S00")
+    assert any("src/mod.py" in p for p in problems), problems
+
+
+def test_closure_forged_readiness_is_caught_by_rederivation(tmp_path: Path) -> None:
+    """Readiness keeps its fail-closed semantics: it is verified by re-derivation, which a
+    hand-edited file cannot survive [AUTH: 02 §C6]."""
+    repo = _prehardware_repo(tmp_path)
+    write_environment_manifest(repo)
+    write_readiness(repo, compute_readiness(repo))
+    assert build_bundle.verify(repo, "S00") == []
+
+    path = repo / "artifacts/p0_pre/P0_PRE_READINESS.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged["P0_PRE_READY"] = True
+    forged["SUITE_SCOPE"] = "INTEGRATED_PRODUCTION_STACK"
+    path.write_text(json.dumps(forged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    problems = build_bundle.verify(repo, "S00")
+    assert any("re-derivation" in p for p in problems), problems
+
+
+def test_closure_tampered_environment_manifest_is_caught(tmp_path: Path) -> None:
+    repo = _prehardware_repo(tmp_path)
+    identity = write_environment_manifest(repo)
+    write_readiness(repo, compute_readiness(repo))
+    manifest = repo / "manifests" / "environments" / f"{identity}.json"
+    obj = json.loads(manifest.read_text(encoding="utf-8"))
+    obj["cuda_driver"] = "999.99"
+    manifest.write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
+    problems = build_bundle.verify(repo, "S00")
+    assert any("recomputed identity" in p for p in problems), problems
+
+
+def test_closure_record_captures_the_hardware_run(tmp_path: Path) -> None:
+    repo = _prehardware_repo(tmp_path)
+    assert build_bundle.closure_record(repo, "S00")["s00b_complete"] is False
+
+    identity = write_environment_manifest(repo)
+    write_readiness(repo, compute_readiness(repo))
+    record = build_bundle.closure_record(repo, "S00")
+    assert record["s00b_complete"] is True
+    assert record["environment_lock_sha256"] == identity
+    assert record["environment_manifests"] == [f"{identity}.json"]
+    produced = record["produced_artifact_sha256"]
+    assert isinstance(produced, dict)
+    assert f"manifests/environments/{identity}.json" in produced
+    assert "artifacts/p0_pre/P0_PRE_READINESS.json" in produced
+    readiness = record["readiness"]
+    assert isinstance(readiness, dict)
+    assert readiness["P0_PRE_READY"] is False, "no evidence records, so still not ready"

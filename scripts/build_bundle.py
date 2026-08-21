@@ -22,6 +22,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from preflight import (  # noqa: E402
+    READINESS_REL,
+    TBD,
+    compute_readiness,
+    environment_lock_sha256,
+    is_environment_lock_manifest,
+)
+
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 HEAD_SHA_RE = re.compile(r"^head git commit\s*=\s*([0-9a-f]{40})$", re.MULTILINE)
 SELF_REFERENTIAL = (
@@ -30,6 +40,33 @@ SELF_REFERENTIAL = (
     "02_CHANGED_FILES.txt",
     "05_ARTIFACT_MANIFEST.json",
 )
+
+#: Artifacts that EXECUTION produces, not artifacts that define the source.
+#:
+#: `P0_PRE_READINESS.json` is written by preflight step 8 [plan §11] and the environment
+#: manifest is written by capture on the H100 [plan §5.6]. Both are expected to change the
+#: moment S00-B runs for real, so hash-binding them to a pre-hardware bundle would make a
+#: correct bootstrap structurally incapable of passing. They keep their provenance — they are
+#: listed, hashed at bundle time, and verified by RE-DERIVATION rather than by a frozen hash,
+#: which is a stronger check than the hash ever was [AUTH: 01 §16; 02 §C6].
+RUNTIME_EVIDENCE_EXACT: tuple[str, ...] = (
+    "artifacts/p0_pre/P0_PRE_READINESS.json",
+    "manifests/environments/S00B_IMAGE_RECORD.json",
+)
+RUNTIME_EVIDENCE_PREFIXES: tuple[str, ...] = ("artifacts/p0_pre/evidence/",)
+ENV_MANIFEST_DIR = "manifests/environments/"
+SHA256_NAME = re.compile(r"^[0-9a-f]{64}\.json$")
+
+
+def is_runtime_evidence(rel: str) -> bool:
+    """True for artifacts produced by execution rather than committed as source."""
+    if rel in RUNTIME_EVIDENCE_EXACT:
+        return True
+    if any(rel.startswith(prefix) for prefix in RUNTIME_EVIDENCE_PREFIXES):
+        return True
+    if rel.startswith(ENV_MANIFEST_DIR):
+        return bool(SHA256_NAME.match(rel[len(ENV_MANIFEST_DIR) :]))
+    return False
 
 
 def git(root: Path, *args: str) -> str:
@@ -54,14 +91,18 @@ def changed_files_text(root: Path, commit: str) -> str:
 
 
 def code_drift(root: Path, described: str, stage: str) -> list[str]:
-    """Paths that changed between the described commit and HEAD, excluding the stage's own
-    bundle and review directories. A non-empty list means the bundle is stale."""
+    """Source paths that changed between the described commit and HEAD.
+
+    The stage's own bundle and review directories are excluded because they carry the
+    bundle itself, and runtime evidence is excluded because producing it is the point of
+    S00-B. Everything else changing means the bundle is stale.
+    """
     head = git(root, "rev-parse", "HEAD").strip()
     if described == head:
         return []
     names = git(root, "diff", "--name-only", described, head).split()
     allowed = (f"stage_acceptance/{stage}/", f"reviews/{stage}/")
-    return sorted(p for p in names if not p.startswith(allowed))
+    return sorted(p for p in names if not p.startswith(allowed) and not is_runtime_evidence(p))
 
 
 def artifact_manifest(root: Path, described: str, stage: str) -> dict[str, object]:
@@ -69,20 +110,23 @@ def artifact_manifest(root: Path, described: str, stage: str) -> dict[str, objec
     tracked = set(git(root, "ls-files").split())
     untracked = set(git(root, "ls-files", "--others", "--exclude-standard").split())
     files = sorted(f for f in tracked | untracked if (root / f).is_file() and f not in self_paths)
+    source = [f for f in files if not is_runtime_evidence(f)]
+    runtime = [f for f in files if is_runtime_evidence(f)]
     return {
         "stage": stage,
         "authority": "01 §16, §26(13), §45",
         "described_commit": described,
         "note": (
-            "File hashes describe the tree at `described_commit`. A manifest cannot hash "
-            "itself or the commit containing it, so the four self-referential bundle files "
-            "are excluded and `build_bundle.py --verify` instead proves zero code drift "
-            "between described_commit and HEAD."
+            "source_artifacts are hash-bound: any change is source drift. runtime_evidence is "
+            "produced by execution (preflight step 8, H100 capture, the image build), so it is "
+            "recorded with its hash at bundle time but verified by re-derivation, not by hash "
+            "equality; otherwise a correct S00-B run would invalidate its own bundle."
         ),
         "self_referential_exclusions": sorted(self_paths),
-        "environment_lock_sha256": "TBD_REQUIRES_HARDWARE",
-        "file_count": len(files),
-        "files": {f: sha256_file(root / f) for f in files},
+        "source_artifact_count": len(source),
+        "runtime_evidence_count": len(runtime),
+        "source_artifacts": {f: sha256_file(root / f) for f in source},
+        "runtime_evidence": {f: sha256_file(root / f) for f in runtime},
     }
 
 
@@ -183,6 +227,52 @@ def generate(root: Path, stage: str) -> str:
     return described
 
 
+def _verify_runtime_evidence(root: Path, listed: dict[str, str]) -> list[str]:
+    """Runtime evidence is verified by RE-DERIVATION, never by a frozen hash.
+
+    A hash would be both too weak (a forged readiness file hashes fine if you re-hash it) and
+    too strong (a correct S00-B run legitimately changes it). Re-deriving is what actually
+    catches forgery [AUTH: 02 §C6; 01 §16].
+    """
+    problems: list[str] = []
+    for rel in sorted(listed):
+        if not (root / rel).is_file():
+            problems.append(f"runtime evidence recorded but now absent: {rel}")
+
+    readiness_path = root / READINESS_REL
+    if readiness_path.is_file():
+        try:
+            stored = json.loads(readiness_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            return problems + [f"{READINESS_REL} is not valid JSON ({exc.msg})"]
+        recomputed = compute_readiness(root, computed_by=str(stored.get("computed_by", "")))
+        if stored != recomputed:
+            differing = sorted(
+                key
+                for key in set(stored) | set(recomputed)
+                if stored.get(key) != recomputed.get(key)
+            )
+            problems.append(
+                f"{READINESS_REL} does not match its re-derivation; differing keys: "
+                + ", ".join(differing)
+            )
+
+    env_dir = root / "manifests" / "environments"
+    if env_dir.is_dir():
+        for path in sorted(env_dir.glob("*.json")):
+            if not is_environment_lock_manifest(path):
+                continue
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            identity = environment_lock_sha256(manifest)
+            if identity != manifest.get("environment_lock_sha256"):
+                problems.append(
+                    f"{path.name}: stored identity does not equal the recomputed identity"
+                )
+            elif identity != path.stem:
+                problems.append(f"{path.name}: filename does not equal its identity")
+    return problems
+
+
 def verify(root: Path, stage: str) -> list[str]:
     """Exact-value verification, not presence checking."""
     problems: list[str] = []
@@ -212,7 +302,7 @@ def verify(root: Path, stage: str) -> list[str]:
     drift = code_drift(root, described, stage)
     if drift:
         problems.append(
-            f"bundle is stale; code changed after {described[:12]}: "
+            f"bundle is stale; source changed after {described[:12]}: "
             + ", ".join(drift[:6])
             + (" ..." if len(drift) > 6 else "")
         )
@@ -224,17 +314,65 @@ def verify(root: Path, stage: str) -> list[str]:
     if (bundle / "02_CHANGED_FILES.txt").read_text(encoding="utf-8") != expected_names:
         problems.append("02_CHANGED_FILES.txt does not equal the diff's --name-only output")
 
-    files = manifest.get("files")
-    if not isinstance(files, dict) or not files:
-        problems.append("05_ARTIFACT_MANIFEST.json lists no files")
+    source = manifest.get("source_artifacts")
+    if not isinstance(source, dict) or not source:
+        problems.append("05_ARTIFACT_MANIFEST.json lists no source_artifacts")
     else:
-        for rel, digest in sorted(files.items()):
+        for rel, digest in sorted(source.items()):
             path = root / rel
             if not path.is_file():
-                problems.append(f"manifest lists a missing artifact: {rel}")
+                problems.append(f"manifest lists a missing source artifact: {rel}")
             elif sha256_file(path) != digest:
-                problems.append(f"manifest hash mismatch: {rel}")
+                problems.append(f"source artifact hash mismatch: {rel}")
+
+    runtime = manifest.get("runtime_evidence")
+    if not isinstance(runtime, dict):
+        problems.append("05_ARTIFACT_MANIFEST.json has no runtime_evidence section")
+    else:
+        problems.extend(_verify_runtime_evidence(root, runtime))
     return problems
+
+
+def closure_record(root: Path, stage: str) -> dict[str, object]:
+    """Evidence produced by an actual S00-B hardware run, recorded deterministically.
+
+    The pre-hardware acceptance bundle cannot contain this: it does not exist until the H100
+    has run. Emitting it explicitly is what closes S00-B, instead of comparing post-run state
+    to a pre-run hash [AUTH: 01 §16, §26(13); 02 §C6; plan §19].
+    """
+    readiness_path = root / READINESS_REL
+    readiness = (
+        json.loads(readiness_path.read_text(encoding="utf-8")) if readiness_path.is_file() else {}
+    )
+    env_dir = root / "manifests" / "environments"
+    manifests = (
+        [p for p in sorted(env_dir.glob("*.json")) if is_environment_lock_manifest(p)]
+        if env_dir.is_dir()
+        else []
+    )
+    produced = {
+        p.relative_to(root).as_posix(): sha256_file(p)
+        for p in [*manifests, readiness_path]
+        if p.is_file()
+    }
+    identity = readiness.get("environment_lock_sha256", TBD)
+    return {
+        "stage": stage,
+        "authority": "01 §16, §26(13); 02 §C6; plan §19",
+        "described_commit": git(root, "rev-parse", "HEAD").strip(),
+        "environment_lock_sha256": identity,
+        "environment_manifests": [p.name for p in manifests],
+        "readiness": {
+            key: readiness.get(key) for key in ("BACKEND_INTEGRATED", "SUITE_SCOPE", "P0_PRE_READY")
+        },
+        "produced_artifact_sha256": produced,
+        "s00b_complete": bool(identity != TBD and manifests),
+        "note": (
+            "Runtime evidence from one hardware run. Commit the environment manifest, the "
+            "readiness file and this record, then regenerate the bundle so the closure state "
+            "is the described one."
+        ),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -242,6 +380,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--root", default=".")
     ap.add_argument("--stage", default="S00")
     ap.add_argument("--verify", action="store_true")
+    ap.add_argument(
+        "--closure", action="store_true", help="write the S00-B hardware closure record"
+    )
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
 
@@ -251,6 +392,30 @@ def main(argv: list[str] | None = None) -> int:
             print(p, file=sys.stderr)
         print(f"bundle-verify: {len(problems)} problem(s)", file=sys.stderr)
         return 1 if problems else 0
+
+    if args.closure:
+        try:
+            record = closure_record(root, args.stage)
+        except RuntimeError as exc:
+            print("s00b_complete = False", file=sys.stderr)
+            print(str(exc), file=sys.stderr)
+            return 1
+        if not record["s00b_complete"]:
+            # Same transactional rule as capture: an incomplete run leaves no artifact that
+            # could later be mistaken for closure [AUTH: 02 §C6; plan §19].
+            print("s00b_complete = False", file=sys.stderr)
+            print(
+                "no closure record written: the environment identity has not resolved; run"
+                " `make env-capture` on the H100 first",
+                file=sys.stderr,
+            )
+            return 1
+        target = root / "stage_acceptance" / args.stage / "12_S00B_CLOSURE.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"closure record written to {target.relative_to(root)}")
+        print("s00b_complete = True")
+        return 0
 
     described = generate(root, args.stage)
     print(f"bundle regenerated for {args.stage} describing {described}")

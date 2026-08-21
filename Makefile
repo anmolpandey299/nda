@@ -7,7 +7,7 @@ PYTEST = $(PY) -m pytest
 READINESS ?= artifacts/p0_pre/P0_PRE_READINESS.json
 
 .PHONY: format lint typecheck unit integration synthetic backend-contract gpu-smoke \
-        env-capture preflight bundle bundle-verify review-worktree
+        env-capture preflight bundle bundle-verify closure review-worktree
 
 ## make format [CHECK=1] — apply, or verify without mutating [AUTH: 01 §33; plan D5]
 format:
@@ -73,6 +73,10 @@ preflight:
 ## regenerate the acceptance bundle from HEAD [AUTH: 01 §26, §45]
 bundle:
 	$(PY) scripts/build_bundle.py --root . --stage S00
+
+## record the runtime evidence produced by an actual S00-B hardware run
+closure:
+	$(PY) scripts/build_bundle.py --root . --stage S00 --closure
 
 ## fail if the committed bundle does not describe the current code exactly
 bundle-verify:
