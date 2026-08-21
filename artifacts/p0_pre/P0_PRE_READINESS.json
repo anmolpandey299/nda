@@ -5,6 +5,7 @@
   "authority": "02 \u00a7C6; 00 \u00a735, \u00a734C.1",
   "computed_by": "PREFLIGHT_STEP_8",
   "environment_lock_sha256": "TBD_REQUIRES_HARDWARE",
+  "environment_problems": [],
   "evidence": {
     "backend_contract": {
       "status": "NOT_RUN(BACKEND_NOT_INTEGRATED)"
@@ -22,11 +23,25 @@
       "status": "NOT_RUN(EMPTY_AT_S00)"
     }
   },
+  "evidence_namespaces": {
+    "lanes": "artifacts/p0_pre/evidence/lanes",
+    "software_gate": "artifacts/p0_pre/evidence/software_gate"
+  },
   "software_gate": {
-    "ANALYSIS_DRY_RUN": "NOT_RUN",
-    "CACHE_ASSERTIONS": "NOT_RUN",
-    "CROSSFIT_NEGATIVE_CONTROL": "NOT_RUN",
-    "P0_00_COMPUTE_BUDGET": "NOT_RUN",
-    "SCORER_ENGINE": "NOT_RUN"
+    "ANALYSIS_DRY_RUN": {
+      "status": "NOT_RUN"
+    },
+    "CACHE_ASSERTIONS": {
+      "status": "NOT_RUN"
+    },
+    "CROSSFIT_NEGATIVE_CONTROL": {
+      "status": "NOT_RUN"
+    },
+    "P0_00_COMPUTE_BUDGET": {
+      "status": "NOT_RUN"
+    },
+    "SCORER_ENGINE": {
+      "status": "NOT_RUN"
+    }
   }
 }

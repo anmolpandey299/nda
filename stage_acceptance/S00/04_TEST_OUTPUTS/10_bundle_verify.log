@@ -1,0 +1,3 @@
+# make bundle-verify
+.venv/bin/python scripts/build_bundle.py --root . --stage S00 --verify
+bundle-verify: 0 problem(s)

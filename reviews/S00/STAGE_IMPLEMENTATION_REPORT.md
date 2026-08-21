@@ -4,6 +4,7 @@
 **Role:** IMPLEMENTER [AUTH: 01 §3.2]
 **Controlling plan:** `stage_acceptance/S00/01_PLAN.md` (accepted, review round 2 of 2)
 **Branch:** `stage/s00` [AUTH: 01 §27]
+**Pass:** final implementation-fix pass (FIX 1-9), closing the implementation BLOCKER/MAJOR set
 
 ---
 
@@ -105,6 +106,75 @@ A17  TARGET_FPR / MIN_K / SEEDS / DARE_P / SVD_RANK / N_BOOTSTRAP / ALPHA as sou
                                                                    -> I14 violation
 A17  TARGET_FPR = load('attacks')['target_fpr']                    -> permitted
 I15  staged, unstaged and untracked production changes             -> all three detected
+```
+
+## 3A. Final implementation-fix pass — FIX 1 to FIX 9
+
+### Changed files
+
+```text
+Makefile                                    rewritten; $(READINESS) expansion repaired
+scripts/preflight.py                        hardened evidence chain, recomputed identity,
+                                            disjoint namespaces, gate_ok, backend gate CLI
+scripts/check_repo_invariants.py            AST/import ownership analysis, case-insensitive
+                                            constants, image-pin and CI-frozen invariants
+scripts/build_bundle.py                     NEW — bundle generation and exact verification
+scripts/make_review_worktree.sh             NEW — pinned read-only reviewer worktree
+scripts/capture_environment.sh              image identity read from the image, not the caller
+Dockerfile                                  base images pinned by immutable digest
+.github/workflows/ci.yml                    uv lock --check + uv sync --frozen
+pyproject.toml                              mypy override for the CUDA-coupled torch import
+tests/_helpers.py                           NEW — provenance fixture builders
+tests/unit/test_s00_final_fixes.py          NEW — 61 regression tests for FIX 1-7
+tests/integration/test_s00_command_surface.py  FIX 1 branches, FIX 8 drift, FIX 9 worktree
+tests/backend_contract/test_backend_contract.py   NEW — collected skeletons
+tests/gpu_smoke/test_cuda_torch_contract.py       NEW — collected skeletons
+tests/gpu_smoke/test_env_capture_contract.py      NEW — collected skeletons
+tests/unit/test_s00_invariants.py           migrated to the disjoint evidence namespaces
+tests/conftest.py                           tests/ on sys.path for shared helpers
+```
+
+### What each fix changed, at root cause
+
+```text
+FIX 1  The recipe interpolated `$$READINESS`, which the shell expanded to the PID, so the
+       readiness file was never opened, the error was swallowed by 2>/dev/null and the
+       lane ALWAYS reported NOT_RUN. Branch B was unreachable. The decision now lives in
+       preflight.py with three exit codes: 0 run the lane, 1 NOT_RUN, 2 unreadable file =
+       hard failure. Both branches and the unreadable case are tested.
+FIX 2  An evidence record is now bound end to end: run_manifest must be under
+       manifests/runs/, exist, parse, carry every 01 §16 field, and agree with the record
+       on RUN_ID and environment identity; artifact hashes are recomputed; path traversal
+       is refused. The current environment identity is RECOMPUTED from the frozen
+       components, and a manifest whose declared identity disagrees is unusable.
+FIX 3  Ownership is enforced by dependency analysis, not naming: aliased sklearn.metrics
+       imports, class methods, module scope, and any scope that manipulates both a TPR and
+       an FPR array or compares an FPR array to a numeric literal.
+FIX 4  Constant patterns are compiled case-insensitively and cover lowercase spellings and
+       annotated assignments.
+FIX 5  gate_ok joined the SUITE_SCOPE conjunction, and lane vs software-gate evidence live
+       in two disjoint directories with exact-case filename matching.
+FIX 6  Base images pinned by digest; capture reads the identity baked into the image and
+       records a caller-supplied digest as unresolved; the GPU and backend lanes ship
+       collected skeletons so they can never collect zero tests.
+FIX 7  CI runs `uv lock --check` then `uv sync --frozen`; an invariant fails if either is
+       missing.
+FIX 8  scripts/build_bundle.py regenerates and verifies the bundle. `make bundle-verify`
+       fails if any path outside stage_acceptance/S00/ or reviews/S00/ differs between the
+       described commit and HEAD, so the bundle cannot describe stale code.
+FIX 9  scripts/make_review_worktree.sh creates a separate worktree at a pinned commit,
+       read-only everywhere except reviews/<stage>/scratch/.
+```
+
+### Commands
+
+```text
+make format CHECK=1 ; make lint ; make typecheck
+make unit ; make integration ; make synthetic ; make backend-contract ; make gpu-smoke
+make backend-contract READINESS=<fixture true>      # branch B, previously unreachable
+python scripts/check_repo_invariants.py --root .
+make bundle ; make bundle-verify ; make preflight
+bash scripts/make_review_worktree.sh <commit> <dest> S00
 ```
 
 ## 4. Unresolved issues

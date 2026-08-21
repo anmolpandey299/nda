@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 import pytest
+from _helpers import write_environment_manifest, write_evidence
 from check_repo_invariants import (
     ENVIRONMENT_LOCK_COMPONENTS,
     FORBIDDEN_PATHS,
@@ -117,10 +118,10 @@ def test_a4_no_source_path_raises_readiness(repo_root: Path) -> None:
 
 def test_a4_forged_evidence_cannot_raise_flags(tmp_path: Path) -> None:
     """Hand-authored PASS files leave every flag unchanged [AUTH: 02 §C6; 01 §16]."""
-    ev = tmp_path / "artifacts" / "p0_pre" / "evidence"
-    ev.mkdir(parents=True)
-    for key in EVIDENCE_KEYS + SOFTWARE_GATE_KEYS:
-        (ev / f"{key}.json").write_text(json.dumps({"status": "PASS"}), encoding="utf-8")
+    for key in EVIDENCE_KEYS:
+        write_evidence(tmp_path, "lanes", key, {"status": "PASS"})
+    for key in SOFTWARE_GATE_KEYS:
+        write_evidence(tmp_path, "software_gate", key, {"status": "PASS"})
     readiness = compute_readiness(tmp_path)
     assert readiness["BACKEND_INTEGRATED"] is False
     assert readiness["SUITE_SCOPE"] == "STATISTICAL_STACK_ONLY"
@@ -129,17 +130,16 @@ def test_a4_forged_evidence_cannot_raise_flags(tmp_path: Path) -> None:
 
 def test_a4_evidence_needs_full_provenance_binding(tmp_path: Path) -> None:
     """Even a run-id-bearing record fails without a run manifest and artifact hashes."""
-    ev = tmp_path / "artifacts" / "p0_pre" / "evidence"
-    ev.mkdir(parents=True)
-    (ev / "backend_contract.json").write_text(
-        json.dumps(
-            {
-                "status": "PASS",
-                "run_id": "a" * 64,
-                "environment_lock_sha256": "b" * 64,
-            }
-        ),
-        encoding="utf-8",
+    env = write_environment_manifest(tmp_path)
+    write_evidence(
+        tmp_path,
+        "lanes",
+        "backend_contract",
+        {
+            "status": "PASS",
+            "run_id": "a" * 64,
+            "environment_lock_sha256": env,
+        },
     )
     assert compute_readiness(tmp_path)["BACKEND_INTEGRATED"] is False
 

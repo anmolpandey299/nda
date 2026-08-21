@@ -16,8 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+      - name: Fail on a pyproject.toml / uv.lock mismatch
+        # --check never re-resolves: a drifted lock fails CI instead of being silently
+        # regenerated, so the committed lock is the environment [AUTH: 01 §12, §46].
+        run: uv lock --check
       - name: Sync the frozen CPU/dev environment
-        run: uv sync --extra cpu-dev
+        run: uv sync --frozen --extra cpu-dev
       - name: Ordered gate + readiness evaluation
         run: make preflight
       - name: Publish readiness state

@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_repo_invariants import (  # noqa: E402
     ENVIRONMENT_LOCK_COMPONENTS,
     RUN_ID_INPUTS,
+    RUN_MANIFEST_REQUIRED_FIELDS,
     Violation,
     run_all,
 )
@@ -63,7 +64,15 @@ PRODUCTION_PATHS: tuple[str, ...] = (
 )
 
 READINESS_REL = "artifacts/p0_pre/P0_PRE_READINESS.json"
-EVIDENCE_DIR_REL = "artifacts/p0_pre/evidence"
+
+#: Disjoint directories, not one directory keyed by name. On a case-insensitive filesystem a
+#: single directory would let `cache_assertions.json` also satisfy `CACHE_ASSERTIONS`, so a
+#: lane result would silently satisfy a software-gate slot [AUTH: 02 §C6; 00 §34C.1].
+EVIDENCE_LANES_REL = "artifacts/p0_pre/evidence/lanes"
+EVIDENCE_GATE_REL = "artifacts/p0_pre/evidence/software_gate"
+
+#: Path under which a run manifest must live for a record to be evidentiary [AUTH: 01 §15].
+RUN_MANIFEST_DIR_REL = "manifests/runs"
 
 
 # --------------------------------------------------------------------------------------
@@ -102,20 +111,44 @@ def validate_environment_manifest(manifest: dict[str, object]) -> list[str]:
     return [k for k in required if k not in manifest]
 
 
-def current_environment_lock(root: Path) -> str:
-    """The environment identity of the one captured environment manifest, or TBD."""
+def environment_identity_status(root: Path) -> tuple[str, list[str]]:
+    """Recompute the current environment identity from the frozen components.
+
+    The declared `environment_lock_sha256` field is never trusted on its own: it is
+    recomputed from the components and a manifest whose declared value disagrees is
+    unusable, so a hand-edited identity cannot authorise anything
+    [AUTH: 01 §12(5)-(9), §15, §32; 02 §C6].
+    """
+    problems: list[str] = []
     env_dir = root / "manifests" / "environments"
     if not env_dir.is_dir():
-        return TBD
+        return TBD, ["no manifests/environments directory"]
     for path in sorted(env_dir.glob("*.json")):
         if path.name == "AI_ENGINEERING_STACK_S00.json":
             continue
-        obj = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(obj, dict):
-            recorded = obj.get("environment_lock_sha256")
-            if isinstance(recorded, str) and SHA256_RE.match(recorded):
-                return recorded
-    return TBD
+        rel = path.relative_to(root).as_posix()
+        try:
+            obj = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            problems.append(f"{rel}: not valid JSON ({exc.msg})")
+            continue
+        if not isinstance(obj, dict):
+            problems.append(f"{rel}: not a JSON object")
+            continue
+        recomputed = environment_lock_sha256(obj)
+        if recomputed == TBD:
+            problems.append(f"{rel}: components unresolved")
+            continue
+        declared = obj.get("environment_lock_sha256")
+        if declared != recomputed:
+            problems.append(f"{rel}: declared identity does not match the recomputed identity")
+            continue
+        return recomputed, problems
+    return TBD, problems
+
+
+def current_environment_lock(root: Path) -> str:
+    return environment_identity_status(root)[0]
 
 
 # --------------------------------------------------------------------------------------
@@ -175,9 +208,30 @@ class EvidenceVerdict:
     reason: str = ""
 
 
+def _contained(root: Path, rel: object) -> Path | None:
+    """Resolve `rel` under `root`, refusing traversal escapes."""
+    if not isinstance(rel, str) or not rel:
+        return None
+    candidate = (root / rel).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return candidate
+
+
 def verify_evidence_record(key: str, record: object, root: Path, env_lock: str) -> EvidenceVerdict:
-    """Accept a record only if it is bound to a run manifest, artifact hashes and the
-    current environment identity. A hand-written {"status": "PASS"} is not evidence."""
+    """Accept a record only if it is bound, end to end, to a real run.
+
+    A complete-shaped forgery that points at README.md or an empty JSON object stays
+    NON_EVIDENTIARY: the manifest must live under manifests/runs/, parse, carry the 01 §16
+    minimum fields, and agree with the record on both RUN_ID and environment identity
+    [AUTH: 01 §16; 02 §C6; 00 §34B.3].
+    """
+
+    def no(reason: str) -> EvidenceVerdict:
+        return EvidenceVerdict(key, False, "NON_EVIDENTIARY", reason)
+
     if not isinstance(record, dict):
         return EvidenceVerdict(key, False, "NOT_RUN", "record is not an object")
     status = record.get("status")
@@ -190,48 +244,80 @@ def verify_evidence_record(key: str, record: object, root: Path, env_lock: str) 
 
     run_id = record.get("run_id")
     if not isinstance(run_id, str) or not SHA256_RE.match(run_id):
-        return EvidenceVerdict(key, False, "NON_EVIDENTIARY", "missing or malformed run_id")
+        return no("missing or malformed run_id")
 
     recorded_env = record.get("environment_lock_sha256")
     if not isinstance(recorded_env, str) or not SHA256_RE.match(recorded_env):
-        return EvidenceVerdict(
-            key, False, "NON_EVIDENTIARY", "missing or malformed environment_lock_sha256"
-        )
-    if env_lock == TBD or recorded_env != env_lock:
-        return EvidenceVerdict(
-            key,
-            False,
-            "NON_EVIDENTIARY",
-            f"environment identity mismatch: record {recorded_env[:12]} != current {env_lock[:12]}",
+        return no("missing or malformed environment_lock_sha256")
+    if env_lock == TBD:
+        return no("current environment identity is unresolved")
+    if recorded_env != env_lock:
+        return no(
+            f"environment identity mismatch: record {recorded_env[:12]} "
+            f"!= recomputed current {env_lock[:12]}"
         )
 
     manifest_rel = record.get("run_manifest")
-    if not isinstance(manifest_rel, str) or not (root / manifest_rel).is_file():
-        return EvidenceVerdict(key, False, "NON_EVIDENTIARY", "run manifest absent")
+    if not isinstance(manifest_rel, str) or not manifest_rel.startswith(RUN_MANIFEST_DIR_REL + "/"):
+        return no(f"run_manifest is not under {RUN_MANIFEST_DIR_REL}/")
+    manifest_path = _contained(root, manifest_rel)
+    if manifest_path is None or not manifest_path.is_file():
+        return no("run manifest absent")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return no(f"run manifest is not valid JSON ({exc.msg})")
+    if not isinstance(manifest, dict):
+        return no("run manifest is not a JSON object")
+
+    missing = [f for f in RUN_MANIFEST_REQUIRED_FIELDS if f not in manifest]
+    if missing:
+        return no(
+            f"run manifest missing 01 §16 fields: {', '.join(missing[:4])}"
+            + (" ..." if len(missing) > 4 else "")
+        )
+    if manifest.get("run_id") != run_id:
+        return no("run manifest RUN_ID does not match the evidence record")
+    if manifest.get("environment_lock_sha256") != recorded_env:
+        return no("run manifest environment identity does not match the evidence record")
 
     artifacts = record.get("artifact_sha256")
     if not isinstance(artifacts, dict) or not artifacts:
-        return EvidenceVerdict(key, False, "NON_EVIDENTIARY", "no artifact hashes")
+        return no("no artifact hashes")
     for rel, digest in artifacts.items():
-        path = root / str(rel)
-        if not path.is_file():
-            return EvidenceVerdict(key, False, "NON_EVIDENTIARY", f"artifact absent: {rel}")
-        actual = hashlib.sha256(path.read_bytes()).hexdigest()
-        if actual != digest:
-            return EvidenceVerdict(key, False, "NON_EVIDENTIARY", f"artifact hash mismatch: {rel}")
+        path = _contained(root, rel)
+        if path is None or not path.is_file():
+            return no(f"artifact absent: {rel}")
+        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            return no(f"artifact hash mismatch: {rel}")
     return EvidenceVerdict(key, True, "PASS")
 
 
-def load_evidence(root: Path) -> dict[str, object]:
+def _load_namespace(base: Path, keys: tuple[str, ...]) -> dict[str, object]:
     out: dict[str, object] = {}
-    base = root / EVIDENCE_DIR_REL
     if not base.is_dir():
         return out
-    for key in EVIDENCE_KEYS + SOFTWARE_GATE_KEYS:
+    for key in keys:
         path = base / f"{key}.json"
-        if path.is_file():
+        if not path.is_file():
+            continue
+        # A case-insensitive filesystem resolves a differently-cased sibling; require the
+        # on-disk name to match exactly so namespaces stay disjoint [AUTH: 02 §C6].
+        if not any(entry.name == f"{key}.json" for entry in base.iterdir()):
+            continue
+        try:
             out[key] = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            out[key] = {"status": "PASS", "_malformed": True}
     return out
+
+
+def load_lane_evidence(root: Path) -> dict[str, object]:
+    return _load_namespace(root / EVIDENCE_LANES_REL, EVIDENCE_KEYS)
+
+
+def load_gate_evidence(root: Path) -> dict[str, object]:
+    return _load_namespace(root / EVIDENCE_GATE_REL, SOFTWARE_GATE_KEYS)
 
 
 # --------------------------------------------------------------------------------------
@@ -240,8 +326,9 @@ def load_evidence(root: Path) -> dict[str, object]:
 
 
 def compute_readiness(root: Path, computed_by: str = "PREFLIGHT_STEP_8") -> dict[str, object]:
-    env_lock = current_environment_lock(root)
-    records = load_evidence(root)
+    env_lock, env_problems = environment_identity_status(root)
+    lane_records = load_lane_evidence(root)
+    gate_records = load_gate_evidence(root)
 
     default_status = {
         "backend_contract": "NOT_RUN(BACKEND_NOT_INTEGRATED)",
@@ -254,8 +341,8 @@ def compute_readiness(root: Path, computed_by: str = "PREFLIGHT_STEP_8") -> dict
     evidence: dict[str, object] = {}
     accepted: dict[str, bool] = {}
     for key in EVIDENCE_KEYS:
-        if key in records:
-            verdict = verify_evidence_record(key, records[key], root, env_lock)
+        if key in lane_records:
+            verdict = verify_evidence_record(key, lane_records[key], root, env_lock)
         else:
             verdict = EvidenceVerdict(key, False, default_status[key])
         accepted[key] = verdict.accepted
@@ -268,32 +355,44 @@ def compute_readiness(root: Path, computed_by: str = "PREFLIGHT_STEP_8") -> dict
             entry["reason"] = verdict.reason
         evidence[key] = entry
 
-    software_gate: dict[str, str] = {}
+    software_gate: dict[str, object] = {}
     gate_ok = True
     for key in SOFTWARE_GATE_KEYS:
-        if key in records:
-            verdict = verify_evidence_record(key, records[key], root, env_lock)
-            software_gate[key] = "VERIFIED" if verdict.accepted else "NOT_RUN"
+        if key in gate_records:
+            verdict = verify_evidence_record(key, gate_records[key], root, env_lock)
+            entry = {"status": "VERIFIED" if verdict.accepted else "NOT_RUN"}
+            if verdict.reason:
+                entry["reason"] = verdict.reason
+            software_gate[key] = entry
             gate_ok = gate_ok and verdict.accepted
         else:
-            software_gate[key] = "NOT_RUN"
+            software_gate[key] = {"status": "NOT_RUN"}
             gate_ok = False
 
     backend_integrated = accepted["backend_contract"]
     all_evidence = all(accepted.values())
-    p0_pre_ready = bool(backend_integrated and all_evidence and gate_ok and env_lock != TBD)
+    environment_resolved = env_lock != TBD
+    #: SUITE_SCOPE is part of the same conjunction as P0_PRE_READY: the suite may only be
+    #: called the integrated production stack when the whole software/backend gate passes
+    #: [AUTH: 02 §C6; 00 §35, §34C.1].
+    fully_integrated = bool(
+        backend_integrated and all_evidence and gate_ok and environment_resolved
+    )
 
     return {
         "BACKEND_INTEGRATED": backend_integrated,
         "SUITE_SCOPE": (
-            "INTEGRATED_PRODUCTION_STACK"
-            if backend_integrated and all_evidence
-            else "STATISTICAL_STACK_ONLY"
+            "INTEGRATED_PRODUCTION_STACK" if fully_integrated else "STATISTICAL_STACK_ONLY"
         ),
-        "P0_PRE_READY": p0_pre_ready,
+        "P0_PRE_READY": fully_integrated,
         "computed_by": computed_by,
         "environment_lock_sha256": env_lock,
+        "environment_problems": env_problems,
         "evidence": evidence,
+        "evidence_namespaces": {
+            "lanes": EVIDENCE_LANES_REL,
+            "software_gate": EVIDENCE_GATE_REL,
+        },
         "software_gate": software_gate,
         "authority": "02 §C6; 00 §35, §34C.1",
     }
@@ -386,12 +485,50 @@ def _make_runner(root: Path, verbose: bool) -> Callable[[Step], StepResult]:
     return runner
 
 
+BACKEND_INTEGRATED_TRUE = 0
+BACKEND_INTEGRATED_FALSE = 1
+BACKEND_READINESS_UNREADABLE = 2
+
+
+def backend_integrated_exit_code(readiness_path: Path) -> tuple[int, str]:
+    """Decide the `make backend-contract` branch. Never swallows an I/O error.
+
+    0 -> run the lane; 1 -> NOT_RUN(BACKEND_NOT_INTEGRATED); 2 -> the readiness file is
+    missing or unreadable, which is a hard failure rather than a NOT_RUN [AUTH: 02 §C6].
+    """
+    try:
+        obj = json.loads(readiness_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return BACKEND_READINESS_UNREADABLE, f"readiness file not found: {readiness_path}"
+    except json.JSONDecodeError as exc:
+        return BACKEND_READINESS_UNREADABLE, f"readiness file is not valid JSON: {exc.msg}"
+    except OSError as exc:  # pragma: no cover - surfaced verbatim
+        return BACKEND_READINESS_UNREADABLE, f"readiness file unreadable: {exc}"
+    if not isinstance(obj, dict) or "BACKEND_INTEGRATED" not in obj:
+        return BACKEND_READINESS_UNREADABLE, "readiness file has no BACKEND_INTEGRATED field"
+    value = obj["BACKEND_INTEGRATED"]
+    if value is True:
+        return BACKEND_INTEGRATED_TRUE, "BACKEND_INTEGRATED is true"
+    return BACKEND_INTEGRATED_FALSE, "BACKEND_INTEGRATED is false"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="ordered §33 gate + readiness evaluation")
     ap.add_argument("--root", default=".")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument(
+        "--backend-integrated",
+        metavar="READINESS_JSON",
+        help="exit 0 if BACKEND_INTEGRATED, 1 if not, 2 if unreadable",
+    )
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
+
+    if args.backend_integrated:
+        code, message = backend_integrated_exit_code(Path(args.backend_integrated))
+        if code == BACKEND_READINESS_UNREADABLE:
+            print(f"backend-contract gate: {message}", file=sys.stderr)
+        return code
 
     print(f"preflight: RUN_ID inputs frozen at {len(RUN_ID_INPUTS)} [AUTH: 01 §15]")
     outcome = run_steps(PREFLIGHT_STEPS, _make_runner(root, args.verbose))

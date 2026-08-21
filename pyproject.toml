@@ -54,6 +54,12 @@ strict = true
 warn_unused_configs = true
 exclude = "(^|/)(specs|reviews|stage_acceptance)/"
 
+# torch is CUDA-coupled and is absent from the S00-A CPU/dev lock; the gpu_smoke lane imports
+# it only behind a runtime availability guard [AUTH: 03 §8; plan §5.2].
+[[tool.mypy.overrides]]
+module = ["torch"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers"
 testpaths = ["tests"]

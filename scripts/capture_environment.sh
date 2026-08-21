@@ -44,12 +44,39 @@ CUDA_RUNTIME="$( command -v nvcc >/dev/null 2>&1 \
 TORCH_VERSION="$($PY -c 'import torch;print(torch.__version__)' 2>/dev/null || echo "$TBD")"
 TORCH_CUDA_BUILD="$($PY -c 'import torch;print(torch.version.cuda)' 2>/dev/null || echo "$TBD")"
 PYTHON_VERSION="$($PY -c 'import platform;print(platform.python_version())')"
-# steps 8-9 — image tag and digest are supplied by the build, never guessed
-DOCKER_IMAGE_TAG="${DOCKER_IMAGE_TAG:-$TBD}"
-DOCKER_IMAGE_DIGEST="${DOCKER_IMAGE_DIGEST:-$TBD}"
+# steps 8-9 — image identity is READ FROM THE IMAGE, not trusted from the caller.
+# /etc/pmm-image.json is baked by the Dockerfile at build time. A caller-supplied value is
+# recorded but treated as unresolved, so an unverifiable identity can never look captured
+# [AUTH: 01 §12(8)(9), §16; 03 §8].
+IMAGE_IDENTITY_SOURCE="NONE"
+BAKED="/etc/pmm-image.json"
+if [ -r "$BAKED" ]; then
+  DOCKER_IMAGE_TAG="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["image_ref"])' "$BAKED" 2>/dev/null || echo "$TBD")"
+  DOCKER_IMAGE_DIGEST="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["image_digest"])' "$BAKED" 2>/dev/null || echo "$TBD")"
+  IMAGE_IDENTITY_SOURCE="BAKED_INTO_IMAGE"
+else
+  DOCKER_IMAGE_TAG="${DOCKER_IMAGE_TAG:-$TBD}"
+  DOCKER_IMAGE_DIGEST="${DOCKER_IMAGE_DIGEST:-$TBD}"
+  if [ "$DOCKER_IMAGE_DIGEST" != "$TBD" ]; then
+    IMAGE_IDENTITY_SOURCE="CALLER_SUPPLIED_UNVERIFIED"
+  fi
+fi
+# A digest must be well formed, and an unverifiable one is not an identity.
+case "$DOCKER_IMAGE_DIGEST" in
+  sha256:*) : ;;
+  "$TBD") : ;;
+  *) echo "capture: malformed image digest, expected sha256:<64 hex>" >&2
+     DOCKER_IMAGE_DIGEST="$TBD" ;;
+esac
+if [ "$IMAGE_IDENTITY_SOURCE" = "CALLER_SUPPLIED_UNVERIFIED" ]; then
+  echo "capture: image digest was caller-supplied and cannot be verified from inside the" >&2
+  echo "         image; recording it as unresolved [AUTH: 01 §12(9); 03 §8]" >&2
+  DOCKER_IMAGE_DIGEST="$TBD"
+fi
 BF16_FP32_TOLERANCE="${BF16_FP32_TOLERANCE:-$TBD}"
 NONDETERMINISM_SOURCES="${NONDETERMINISM_SOURCES:-$TBD}"
 DEPS="$($PY -m pip freeze 2>/dev/null | tr '\n' ';' || echo "$TBD")"
+export IMAGE_IDENTITY_SOURCE
 
 TMP="$(mktemp)"
 UV_LOCK_SHA256="$UV_LOCK_SHA256" NVIDIA_SMI="$NVIDIA_SMI" GPU_MODEL="$GPU_MODEL" \
@@ -58,7 +85,8 @@ CUDA_RUNTIME="$CUDA_RUNTIME" TORCH_VERSION="$TORCH_VERSION" \
 TORCH_CUDA_BUILD="$TORCH_CUDA_BUILD" PYTHON_VERSION="$PYTHON_VERSION" \
 DOCKER_IMAGE_TAG="$DOCKER_IMAGE_TAG" DOCKER_IMAGE_DIGEST="$DOCKER_IMAGE_DIGEST" \
 BF16_FP32_TOLERANCE="$BF16_FP32_TOLERANCE" NONDETERMINISM_SOURCES="$NONDETERMINISM_SOURCES" \
-DEPS="$DEPS" OUT_DIR="$OUT_DIR" "$PY" - <<'PYEOF' > "$TMP"
+DEPS="$DEPS" OUT_DIR="$OUT_DIR" IMAGE_IDENTITY_SOURCE="$IMAGE_IDENTITY_SOURCE" \
+"$PY" - <<'PYEOF' > "$TMP"
 import datetime, json, os, sys
 sys.path.insert(0, "scripts")
 from preflight import environment_lock_sha256, validate_environment_manifest
@@ -79,6 +107,7 @@ m = {
     "dependency_versions": os.environ["DEPS"],
     "bf16_fp32_tolerance": os.environ["BF16_FP32_TOLERANCE"],
     "nondeterminism_sources": os.environ["NONDETERMINISM_SOURCES"],
+    "image_identity_source": os.environ["IMAGE_IDENTITY_SOURCE"],
     "capture_timestamp_utc": datetime.datetime.now(datetime.UTC).isoformat(),
     "authority": "01 §12(2)-(9), §15, §16, §30, §32",
 }

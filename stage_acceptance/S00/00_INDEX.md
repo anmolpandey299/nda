@@ -1,7 +1,7 @@
 # Stage Acceptance Bundle — S00
 
 Layout is `01 §45`; all twenty `01 §26` fields are present across these slots, mapped in
-plan §8.3 [AUTH: 01 §26, §45].
+plan §8.3 [AUTH: 01 §26, §45]. Regenerate with `make bundle`; check with `make bundle-verify`.
 
 | 01 §26 field | Slot |
 |---|---|
@@ -41,7 +41,7 @@ suite as backend readiness. No scientific code, no research-model execution
 ## 3. Controlling spec sections
 
 ```text
-01 §11 §12 §17 §18 §22 §27 §28 §33 §35 §36 §39 S00 §45 §46
+01 §11 §12 §16 §17 §18 §22 §27 §28 §33 §35 §36 §39 S00 §45 §46
 02 §C1 §C2 §C4 §C5 §C6 §C7 §C8
 03 §4 §8 §9 §10 §13 §14
 00 §34A.1-.5 §34B.2 §34B.3 §34C.1 §35
@@ -50,14 +50,20 @@ suite as backend readiness. No scientific code, no research-model execution
 ## 4. Base git commit
 
 ```text
-NONE — S00 is the root commit of the repository (empty tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904).
+base git commit = 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 ```
+
+S00 is the root commit of the repository; the base is git's empty tree.
 
 ## 5. Head git commit
 
 ```text
-f7e6ee0eadfb9550a1c5a1f74a0029960baedcf5
+head git commit = a79cf2acb9b31554a2d40642d8aa1a2f80c32850
 ```
+
+`make bundle-verify` fails if any path outside `stage_acceptance/S00/` or
+`reviews/S00/` differs between this commit and HEAD, so the bundle can never describe
+stale code.
 
 ## 20. Requested verdict
 
@@ -65,7 +71,7 @@ f7e6ee0eadfb9550a1c5a1f74a0029960baedcf5
 requested verdict = ACCEPT
 ```
 
-Requested on the evidence in this bundle, subject to the one open item in
-`09_UNRESOLVED.md`: S00-B environment capture has not run, so
-`ENVIRONMENT_LOCK_SHA256 = TBD_REQUIRES_HARDWARE` and plan §19 makes S00-B evidence an
-acceptance criterion. F1 is explicitly not an acceptance branch [AUTH: plan §17 F1, §19].
+Requested on the evidence in this bundle, subject to the open item in `09_UNRESOLVED.md`:
+S00-B environment capture has not run, so `ENVIRONMENT_LOCK_SHA256 = TBD_REQUIRES_HARDWARE`
+and plan §19 makes S00-B evidence an acceptance criterion. F1 is explicitly not an acceptance
+branch [AUTH: plan §17 F1, §19].

@@ -11,7 +11,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import build_bundle
 import pytest
+from _helpers import valid_record, write_environment_manifest, write_evidence
 from preflight import (
     PREFLIGHT_STEPS,
     DirtyProductionTreeError,
@@ -132,32 +134,21 @@ def test_a6_preflight_emits_readiness_false(repo_root: Path) -> None:
 
 def test_a6_environment_mismatch_cannot_raise_a_flag(tmp_path: Path) -> None:
     """Evidence bound to a different environment identity is NON_EVIDENTIARY
-    [AUTH: 01 §16; 02 §C6; C-01/S00-CBR-003 closure]."""
-    env_dir = tmp_path / "manifests" / "environments"
-    env_dir.mkdir(parents=True)
-    (env_dir / "e.json").write_text(
-        json.dumps({"environment_lock_sha256": "c" * 64}), encoding="utf-8"
-    )
-    runs = tmp_path / "manifests" / "runs"
-    runs.mkdir(parents=True)
-    (runs / "r.json").write_text("{}", encoding="utf-8")
-    art = tmp_path / "artifacts" / "p0_pre"
-    (art / "evidence").mkdir(parents=True)
-    (art / "x.bin").write_bytes(b"x")
-    import hashlib
-
-    digest = hashlib.sha256(b"x").hexdigest()
-    record = {
-        "status": "PASS",
-        "run_id": "a" * 64,
-        "environment_lock_sha256": "d" * 64,  # <- different environment
-        "run_manifest": "manifests/runs/r.json",
-        "artifact_sha256": {"artifacts/p0_pre/x.bin": digest},
-    }
-    (art / "evidence" / "backend_contract.json").write_text(json.dumps(record), encoding="utf-8")
+    [AUTH: 01 §16; 02 §C6; C-01 / S00-CBR-003 closure]."""
+    env = write_environment_manifest(tmp_path)
+    record = valid_record(tmp_path, env)
+    record["environment_lock_sha256"] = "d" * 64  # a different environment
+    write_evidence(tmp_path, "lanes", "backend_contract", record)
     readiness = compute_readiness(tmp_path)
     assert readiness["BACKEND_INTEGRATED"] is False
     assert "mismatch" in str(readiness["evidence"])
+
+
+def test_a6_matching_environment_is_accepted(tmp_path: Path) -> None:
+    """Positive control, so the mismatch case above proves rejection rather than refusal."""
+    env = write_environment_manifest(tmp_path)
+    write_evidence(tmp_path, "lanes", "backend_contract", valid_record(tmp_path, env))
+    assert compute_readiness(tmp_path)["BACKEND_INTEGRATED"] is True
 
 
 # ------------------------------------------------------------------ A10
@@ -282,3 +273,127 @@ def test_i15_ignores_non_production_paths(tmp_path: Path, repo_root: Path) -> No
 def test_i15_refuses_when_not_a_worktree(tmp_path: Path) -> None:
     with pytest.raises(DirtyProductionTreeError):
         production_tree_dirty(tmp_path)
+
+
+# ------------------------------------------------------------------ FIX 1: both branches
+def _readiness_fixture(tmp_path: Path, backend_integrated: bool) -> Path:
+    path = tmp_path / "readiness.json"
+    path.write_text(
+        json.dumps(
+            {
+                "BACKEND_INTEGRATED": backend_integrated,
+                "SUITE_SCOPE": "INTEGRATED_PRODUCTION_STACK"
+                if backend_integrated
+                else "STATISTICAL_STACK_ONLY",
+                "P0_PRE_READY": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_fix1_branch_a_not_run_when_backend_absent(repo_root: Path, tmp_path: Path) -> None:
+    res = _run(
+        ["make", "backend-contract", f"READINESS={_readiness_fixture(tmp_path, False)}"], repo_root
+    )
+    assert res.returncode == 0
+    assert "NOT_RUN(BACKEND_NOT_INTEGRATED)" in res.stdout
+    assert "passed" not in res.stdout.lower()
+
+
+def test_fix1_branch_b_actually_invokes_pytest(repo_root: Path, tmp_path: Path) -> None:
+    """The old recipe expanded `$$READINESS` to a PID-prefixed literal, so this branch was
+    unreachable and every run reported NOT_RUN [FIX 1]."""
+    res = _run(
+        ["make", "backend-contract", f"READINESS={_readiness_fixture(tmp_path, True)}"], repo_root
+    )
+    combined = res.stdout + res.stderr
+    assert "NOT_RUN(BACKEND_NOT_INTEGRATED)" not in combined
+    assert "pytest" in combined or "skipped" in combined.lower(), combined
+    assert "tests/backend_contract" in combined or "skipped" in combined.lower()
+
+
+def test_fix1_branch_c_unreadable_readiness_is_a_hard_failure(
+    repo_root: Path, tmp_path: Path
+) -> None:
+    """A missing readiness file must not be silently swallowed into a NOT_RUN [FIX 1]."""
+    res = _run(["make", "backend-contract", f"READINESS={tmp_path / 'absent.json'}"], repo_root)
+    assert res.returncode != 0
+    combined = res.stdout + res.stderr
+    assert "NOT_RUN(BACKEND_NOT_INTEGRATED)" not in combined
+    assert "not found" in combined or "unreadable" in combined
+
+
+# ------------------------------------------------------------------ FIX 8: bundle exactness
+def test_fix8_committed_bundle_describes_the_current_code(repo_root: Path) -> None:
+    problems = build_bundle.verify(repo_root, "S00")
+    assert problems == [], problems
+
+
+def test_fix8_bundle_verify_target_passes(repo_root: Path) -> None:
+    assert _run(["make", "bundle-verify"], repo_root).returncode == 0
+
+
+def test_fix8_drift_after_the_described_commit_is_detected(tmp_path: Path) -> None:
+    repo = tmp_path / "r"
+    (repo / "src").mkdir(parents=True)
+    (repo / "stage_acceptance" / "S00").mkdir(parents=True)
+    _git(repo, "init", "-b", "stage/test", "-q")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "src" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "one")
+    build_bundle.generate(repo, "S00")
+    assert build_bundle.verify(repo, "S00") == []
+
+    (repo / "src" / "mod.py").write_text("x = 2\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "code drift")
+    problems = build_bundle.verify(repo, "S00")
+    assert any("stale" in p for p in problems), problems
+
+
+def test_fix8_manifest_hash_tampering_is_detected(tmp_path: Path) -> None:
+    repo = tmp_path / "r"
+    (repo / "src").mkdir(parents=True)
+    _git(repo, "init", "-b", "stage/test", "-q")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "src" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "one")
+    build_bundle.generate(repo, "S00")
+    manifest_path = repo / "stage_acceptance" / "S00" / "05_ARTIFACT_MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"]["src/mod.py"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    assert any("hash mismatch" in p for p in build_bundle.verify(repo, "S00"))
+
+
+# ------------------------------------------------------------------ FIX 9: reviewer worktree
+def test_fix9_review_worktree_is_pinned_and_read_only(repo_root: Path, tmp_path: Path) -> None:
+    """A blind reviewer gets a separate pinned checkout, writable only under scratch/
+    [AUTH: 03 §9]. The primary worktree is never claimed to be read-only."""
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root ignores mode bits")
+    head = _git(repo_root, "rev-parse", "HEAD").stdout.strip()
+    dest = tmp_path / "review"
+    created = _run(["bash", "scripts/make_review_worktree.sh", head, str(dest), "S00"], repo_root)
+    try:
+        assert created.returncode == 0, created.stderr
+        assert head in created.stdout
+        assert _git(dest, "rev-parse", "HEAD").stdout.strip() == head
+
+        with pytest.raises(PermissionError):
+            (dest / "src" / "injected.py").write_text("x = 1\n", encoding="utf-8")
+        with pytest.raises(PermissionError):
+            (dest / "Makefile").write_text("tampered\n", encoding="utf-8")
+
+        note = dest / "reviews" / "S00" / "scratch" / "finding.md"
+        note.write_text("reviewer diagnostic", encoding="utf-8")
+        assert note.read_text(encoding="utf-8") == "reviewer diagnostic"
+    finally:
+        _run(["bash", "scripts/make_review_worktree.sh", "--remove", str(dest)], repo_root)
+    assert not dest.exists()

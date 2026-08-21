@@ -65,30 +65,75 @@ BANNED_OUTSIDE_SCORING = re.compile(
     r"calibrate_threshold|select_threshold|threshold_calibration|"
     r"cross_?fit\w*)$"
 )
-BOUNDARY_DIRS: tuple[str, ...] = ("analysis", "attacks")
+
+#: Identifier vocabulary of a ROC implementation. A module that manipulates BOTH a
+#: true-positive-rate and a false-positive-rate array is implementing the estimator,
+#: whatever it calls itself [AUTH: 00 §34A.2(8); 02 §C1, §C2].
+TPR_NAMES: frozenset[str] = frozenset({"tpr", "tprs", "true_positive_rate", "true_positive_rates"})
+FPR_NAMES: frozenset[str] = frozenset(
+    {"fpr", "fprs", "false_positive_rate", "false_positive_rates"}
+)
+
+#: Importing a ROC/threshold toolkit outside src/scoring/ is a second implementation path,
+#: including under an alias [AUTH: 02 §C2].
+ROC_TOOLKIT_MODULES: tuple[str, ...] = ("sklearn.metrics",)
+ROC_TOOLKIT_SYMBOLS: frozenset[str] = frozenset(
+    {"roc_curve", "roc_auc_score", "det_curve", "precision_recall_curve", "RocCurveDisplay"}
+)
+
+#: Minimum run-manifest fields; a result without them is NON_EVIDENTIARY [AUTH: 01 §16].
+RUN_MANIFEST_REQUIRED_FIELDS: tuple[str, ...] = (
+    "run_id",
+    "git_commit",
+    "git_dirty",
+    "spec_hash",
+    "execution_lock_hash",
+    "model_revision",
+    "tokenizer_hash",
+    "data_manifest_hash",
+    "environment_lock_sha256",
+    "gpu_model",
+    "cuda",
+    "pytorch",
+    "precision",
+    "seeds",
+    "config",
+    "wall_clock_start",
+    "wall_clock_end",
+    "exit_code",
+    "artifact_paths",
+    "artifact_hashes",
+    "metrics_paths",
+    "stdout_log_path",
+    "stderr_log_path",
+)
 
 #: Material experimental constants that must resolve from configs/** [AUTH: 01 §17].
+#: Matched case-insensitively: `target_fpr` and `TARGET_FPR` are the same defect.
 MATERIAL_CONSTANTS: tuple[re.Pattern[str], ...] = tuple(
-    re.compile(p)
+    re.compile(p, re.IGNORECASE)
     for p in (
-        r"^(?:[A-Z0-9_]*_)?TARGET_FPR$",
-        r"^FPR_TARGET$",
-        r"^MIN_?K(?:_FRACTION|_PERCENT|_FRAC)?$",
-        r"^(?:MERGE_)?ALPHAS?$",
-        r"^K$",
-        r"^K_VALUES$",
-        r"^NUM_PARTNERS$",
-        r"^DARE_P$",
-        r"^P_DARE$",
-        r"^SVD_RANK$",
-        r"^LORA_RANK$",
-        r"^RANK$",
-        r"^BOOTSTRAP_REPLICATES$",
-        r"^N_BOOTSTRAP$",
-        r"^BOOTSTRAP_N$",
-        r"^SEEDS?$",
-        r"^TRAINING_SEEDS?$",
-        r"^RANDOM_SEED$",
+        r"^(?:[a-z0-9_]*_)?target_fpr$",
+        r"^fpr_target$",
+        r"^min_?k(?:_fraction|_percent|_frac|_pct)?$",
+        r"^(?:merge_)?alphas?$",
+        r"^k$",
+        r"^k_values?$",
+        r"^num_partners$",
+        r"^dare_p$",
+        r"^p_dare$",
+        r"^dare_drop_rate$",
+        r"^svd_rank$",
+        r"^lora_rank$",
+        r"^rank$",
+        r"^retained_ranks?$",
+        r"^bootstrap_replicates?$",
+        r"^n_bootstrap$",
+        r"^bootstrap_n$",
+        r"^seeds?$",
+        r"^training_seeds?$",
+        r"^random_seed$",
+        r"^dp_seeds?$",
     )
 )
 
@@ -251,9 +296,88 @@ def check_structure(root: Path) -> list[Violation]:
     return v
 
 
+def boundary_files(root: Path) -> list[Path]:
+    """Every src/ module that is NOT the sole owner. src/scoring/ owns fold construction,
+    calibration-threshold logic, fixed-FPR ROC and the tie-safe TPR@1%FPR estimator; every
+    other package may consume those APIs and may not implement them
+    [AUTH: 00 §34A.1-.2; 02 §C1, §C2]."""
+    return [f for f in py_files(root, "src") if f.parent.name != RESERVED_OWNER_DIR]
+
+
+def _identifiers(node: ast.AST) -> set[str]:
+    names: set[str] = set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name):
+            names.add(child.id)
+        elif isinstance(child, ast.Attribute):
+            names.add(child.attr)
+        elif isinstance(child, ast.arg):
+            names.add(child.arg)
+    return names
+
+
+def _roc_toolkit_imports(tree: ast.Module) -> list[str]:
+    """Any import of a ROC toolkit, including aliased forms [AUTH: 02 §C2]."""
+    hits: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if any(
+                    alias.name == m or alias.name.startswith(m + ".") for m in ROC_TOOLKIT_MODULES
+                ):
+                    hits.append(
+                        f"import {alias.name}" + (f" as {alias.asname}" if alias.asname else "")
+                    )
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                full = f"{module}.{alias.name}" if module else alias.name
+                if (
+                    any(
+                        full == m or full.startswith(m + ".") or module == m
+                        for m in ROC_TOOLKIT_MODULES
+                    )
+                    or alias.name in ROC_TOOLKIT_SYMBOLS
+                ):
+                    hits.append(
+                        f"from {module} import {alias.name}"
+                        + (f" as {alias.asname}" if alias.asname else "")
+                    )
+    return hits
+
+
+def _fpr_threshold_comparisons(node: ast.AST) -> bool:
+    """An FPR operating point being selected outside src/scoring/.
+
+    Catches the direct form `fpr <= 0.01` and the indirect one `[f <= 0.01 for f in fpr]`,
+    where the compared operand is a loop variable: any scope that both names an FPR array and
+    compares against a numeric literal is choosing an operating point [AUTH: 02 §C1, §C2].
+    """
+    names_fpr = any(
+        (isinstance(c, ast.Name) and c.id.lower() in FPR_NAMES)
+        or (isinstance(c, ast.Attribute) and c.attr.lower() in FPR_NAMES)
+        or (isinstance(c, ast.arg) and c.arg.lower() in FPR_NAMES)
+        for c in ast.walk(node)
+    )
+    if not names_fpr:
+        return False
+    for child in ast.walk(node):
+        if isinstance(child, ast.Compare):
+            operands = [child.left, *child.comparators]
+            if any(
+                isinstance(o, ast.Constant)
+                and isinstance(o.value, int | float)
+                and not isinstance(o.value, bool)
+                for o in operands
+            ):
+                return True
+    return False
+
+
 def check_single_owner(root: Path) -> list[Violation]:
     """I1 + I13: one scorer / cross-fit / fixed-FPR / cache path, enforced by API
-    reservation AND an import boundary [AUTH: 00 §34A.2(8), §34A.5; 02 §C1, §C2]."""
+    reservation AND by dependency analysis, not by function naming alone
+    [AUTH: 00 §34A.2(8), §34A.5; 02 §C1, §C2]."""
     out: list[Violation] = []
     granted = _scorer_exception_paths(root)
     seen: dict[str, list[str]] = {}
@@ -281,34 +405,82 @@ def check_single_owner(root: Path) -> list[Violation]:
                 )
             )
 
-    for sub in BOUNDARY_DIRS:
-        for f in py_files(root, f"src/{sub}"):
-            rel = f.relative_to(root).as_posix()
-            if rel in granted:
-                continue
-            try:
-                tree = ast.parse(f.read_text(encoding="utf-8"), filename=rel)
-            except SyntaxError as exc:  # pragma: no cover - surfaced as a violation
-                out.append(Violation("I1", rel, f"unparseable: {exc}"))
-                continue
-            names = [
-                n.name
-                for n in tree.body
-                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
-            ]
-            names += [
-                n for n, val in _module_scope_assignments(tree) if isinstance(val, ast.Lambda)
-            ]
-            for name in names:
-                if BANNED_OUTSIDE_SCORING.match(name):
+    for f in boundary_files(root):
+        rel = f.relative_to(root).as_posix()
+        if rel in granted:
+            continue
+        try:
+            tree = ast.parse(f.read_text(encoding="utf-8"), filename=rel)
+        except SyntaxError as exc:  # pragma: no cover - surfaced as a violation
+            out.append(Violation("I1", rel, f"unparseable: {exc}"))
+            continue
+
+        for stmt in _roc_toolkit_imports(tree):
+            out.append(
+                Violation(
+                    "I13",
+                    rel,
+                    f"ROC toolkit imported outside src/scoring/: '{stmt}';"
+                    " consume the src.scoring API instead [AUTH: 02 §C2]",
+                )
+            )
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                if BANNED_OUTSIDE_SCORING.match(node.name):
                     out.append(
                         Violation(
                             "I13",
                             rel,
-                            f"'{name}' defines fold/threshold/fixed-FPR logic outside src/scoring/;"
-                            " import it from src.scoring [AUTH: 00 §34A.2(8); 02 §C2]",
+                            f"'{node.name}' defines fold/threshold/fixed-FPR logic outside"
+                            " src/scoring/ [AUTH: 00 §34A.2(8); 02 §C2]",
                         )
                     )
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                names = {n.lower() for n in _identifiers(node)}
+                if names & TPR_NAMES and names & FPR_NAMES:
+                    out.append(
+                        Violation(
+                            "I13",
+                            rel,
+                            f"'{node.name}' manipulates both TPR and FPR arrays, i.e. it is a"
+                            " second ROC implementation whatever it is named"
+                            " [AUTH: 00 §34A.2(8); 02 §C2]",
+                        )
+                    )
+                elif _fpr_threshold_comparisons(node):
+                    out.append(
+                        Violation(
+                            "I13",
+                            rel,
+                            f"'{node.name}' selects an FPR operating point outside src/scoring/"
+                            " [AUTH: 02 §C1, §C2]",
+                        )
+                    )
+
+        module_body = ast.Module(
+            body=[
+                n
+                for n in tree.body
+                if not isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+            ],
+            type_ignores=[],
+        )
+        names = {n.lower() for n in _identifiers(module_body)}
+        if names & TPR_NAMES and names & FPR_NAMES:
+            out.append(
+                Violation(
+                    "I13",
+                    rel,
+                    "module scope manipulates both TPR and FPR arrays [AUTH: 00 §34A.2(8); 02 §C2]",
+                )
+            )
+        elif _fpr_threshold_comparisons(module_body):
+            out.append(
+                Violation(
+                    "I13", rel, "module scope selects an FPR operating point [AUTH: 02 §C1, §C2]"
+                )
+            )
     return out
 
 
@@ -479,6 +651,35 @@ def check_ci(root: Path) -> list[Violation]:
         out.append(Violation("I10", "ci.yml", "CI declares a GPU runner [AUTH: 01 §6.1, §49]"))
     if "make preflight" not in text:
         out.append(Violation("I10", "ci.yml", "CI does not invoke make preflight"))
+    if "--frozen" not in text:
+        out.append(
+            Violation("I10", "ci.yml", "CI does not sync from the frozen lock [AUTH: 01 §12, §46]")
+        )
+    if "uv lock --check" not in text:
+        out.append(
+            Violation(
+                "I10",
+                "ci.yml",
+                "CI does not fail on a pyproject/uv.lock mismatch [AUTH: 01 §12, §46]",
+            )
+        )
+    return out
+
+
+DIGEST_PIN = re.compile(r"@sha256:[0-9a-f]{64}")
+MUTABLE_FROM = re.compile(r"^FROM\s+(?!\$\{)(\S+)", re.MULTILINE)
+
+
+def check_image_pins(root: Path) -> list[Violation]:
+    """Base images are pinned by immutable digest, never by a mutable tag [AUTH: 01 §12(8)(9)]."""
+    f = root / "Dockerfile"
+    if not f.is_file():
+        return [Violation("I6", "Dockerfile", "missing")]
+    out: list[Violation] = []
+    for match in MUTABLE_FROM.finditer(f.read_text(encoding="utf-8")):
+        ref = match.group(1)
+        if not DIGEST_PIN.search(ref):
+            out.append(Violation("I6", "Dockerfile", f"base image '{ref}' is not pinned by digest"))
     return out
 
 
