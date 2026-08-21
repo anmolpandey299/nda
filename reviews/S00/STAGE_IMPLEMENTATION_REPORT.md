@@ -619,6 +619,60 @@ closure consumed, so a fresh clone can re-verify the hashes. Image-identity tamp
 caught by standalone runtime verification, not only at closure.
 
 
+## 3J. Targeted closure fix — F01, F02, F03, F05
+
+Reviewed at science `1dd5b1aa1c301b1bb750b6eb19b51963012e01fd`, build `403ed3bc0d1d3cab00d8b9ad125de9b28b37bd59`.
+
+### F01 (BLOCKER) — the mandatory GPU count was self-declared
+
+`validate_lane_evidence` trusted `observed.expected_tests` from the record, so a forgery
+claiming `expected_tests = tests = passed = 2` authorised closure while the real suite defines
+eight tests. The required count is now recomputed from the authoritative suite on every
+validation, and `expected_tests`, `tests` and `passed` must each equal it exactly, with
+failures, errors and skips zero. The publisher uses the same equality, so publication and
+consumption cannot disagree. A parametrised case in the lane now raises rather than making the
+derived count silently wrong.
+
+### F02 (BLOCKER) — three commit roles were collapsing into HEAD
+
+```text
+C  science described commit   what the acceptance bundle describes
+B  bundle/build commit        the commit the sealed image is permanently built from
+H  closure evidence commit    a later commit recording post-build H100 evidence
+```
+
+The build commit was taken as `git rev-parse HEAD`, so committing closure evidence at H made
+the correctly built image look stale and demanded a rebuild that would change nothing. B is
+now derived from the Git graph as the commit that introduced the artifact manifest, which
+survives H because the closure commit records evidence under other paths. Closure validates
+the whole graph: C and B exist, C is an ancestor of B, B is an ancestor of HEAD, and the baked
+image source commit equals B. The runbook no longer regenerates the bundle after the closure
+commit, since that would re-date B to H.
+
+### F03 (BLOCKER) — closure summaries were trusted
+
+`verify_closure_record` hashed artifacts but believed the record's own summary fields, so
+`science_described_commit = 000…`, `readiness.P0_PRE_READY = true` and `gpu_smoke.tests = 0`
+all survived. Every summary is now recomputed from its authority: the commit identities from
+the bundle index and the Git graph, the ancestry from Git, readiness from the authoritative
+re-derivation, the GPU summary from the canonically validated lane evidence, the environment
+identity from the validated manifest, and the image state from the B-bound identity. It still
+never regenerates or mutates evidence.
+
+### F04 — untouched
+
+Readiness re-derivation was accepted and is unchanged. `BACKEND_INTEGRATED = false`,
+`SUITE_SCOPE = STATISTICAL_STACK_ONLY`, `P0_PRE_READY = false` and the no-RUN_ID S00
+classification of GPU evidence all remain.
+
+### F05 (MAJOR) — the closure artifact list could drift
+
+`build_bundle.py --closure-artifacts` derives the list from the repository, the bootstrap
+prints it by calling that instead of retyping it, and a test fails if the runbook omits any
+entry. A fresh clone containing those artifacts can run `verify_source`, `verify_runtime` and
+`verify_closure_record`, which a clone fixture exercises end to end.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.

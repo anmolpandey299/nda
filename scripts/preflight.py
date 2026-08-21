@@ -335,19 +335,32 @@ LANE_EVIDENCE_SCHEMA = "s00b.lane-evidence.v1"
 
 
 def expected_lane_test_count(root: Path, lane: str) -> int:
-    """How many test functions the lane defines. A partially collected suite is not a lane."""
+    """How many tests the lane's authoritative suite defines.
+
+    Recomputed from the suite on disk. A record that understates its own required count must
+    not be able to authorise anything, so this value is never read from the evidence.
+
+    Parametrised cases would make the collected count exceed the function count, so they are
+    refused here rather than allowed to make the mandatory count silently wrong.
+    """
     directory = root / "tests" / lane
     total = 0
     if not directory.is_dir():
         return 0
     for path in sorted(directory.glob("test_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        total += sum(
-            1
-            for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-            and node.name.startswith("test_")
-        )
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if not node.name.startswith("test_"):
+                continue
+            for decorator in node.decorator_list:
+                if "parametrize" in ast.dump(decorator):
+                    raise CaptureFailure(
+                        f"{lane}: {path.name}::{node.name} is parametrised, so the mandatory"
+                        " test count cannot be derived from the suite definition"
+                    )
+            total += 1
     return total
 
 
@@ -400,10 +413,12 @@ def record_lane_evidence(
         raise CaptureFailure(f"{key}: junit report is unparseable ({exc})") from exc
 
     expected = expected_lane_test_count(root, key)
-    if counts["tests"] == 0 or counts["tests"] < expected:
+    if expected == 0:
+        raise CaptureFailure(f"{key}: the lane defines no tests, so it cannot report a state")
+    if counts["tests"] != expected:
         raise CaptureFailure(
-            f"{key}: collected {counts['tests']} of {expected} tests; the required suite did"
-            " not run"
+            f"{key}: collected {counts['tests']} tests but the suite requires exactly"
+            f" {expected}; the mandatory suite did not run"
         )
     if counts["failures"] or counts["errors"]:
         raise CaptureFailure(f"{key}: {counts['failures']} failed, {counts['errors']} errored")
@@ -523,18 +538,23 @@ def validate_lane_evidence(
     if problems:
         return None, problems
 
-    tests = int(observed["tests"])
-    expected = int(observed["expected_tests"])
-    if tests <= 0 or tests < expected:
-        problems.append(f"{key}: collected {tests} of {expected} required tests")
+    # The mandatory count comes from the authoritative suite, NOT from the record. A record
+    # claiming expected_tests = 2 cannot authorise anything when the suite defines 8.
+    try:
+        required = expected_lane_test_count(root, key)
+    except CaptureFailure as exc:
+        return None, [str(exc)]
+    if required <= 0:
+        problems.append(f"{key}: the authoritative suite defines no tests")
+    for name in ("expected_tests", "tests", "passed"):
+        if int(observed[name]) != required:
+            problems.append(
+                f"{key}: observed.{name} = {observed[name]} but the authoritative suite"
+                f" requires {required}"
+            )
     for name in ("failures", "errors", "skipped"):
         if int(observed[name]) != 0:
             problems.append(f"{key}: observed.{name} = {observed[name]}, expected 0")
-    if int(observed["passed"]) != tests:
-        problems.append(
-            f"{key}: observed.passed {observed['passed']} does not account for all"
-            f" {tests} collected tests"
-        )
     return (None, problems) if problems else (record, [])
 
 

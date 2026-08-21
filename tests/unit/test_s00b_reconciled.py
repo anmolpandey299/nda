@@ -79,7 +79,7 @@ def test_4_two_passed_six_skipped_is_not_a_pass(tmp_path: Path) -> None:
 
 def test_4_partial_collection_is_not_a_pass(tmp_path: Path) -> None:
     _ready(tmp_path, count=8)
-    with pytest.raises(CaptureFailure, match="required suite did not run"):
+    with pytest.raises(CaptureFailure, match="requires exactly"):
         record_lane_evidence(tmp_path, LANE, junit_xml=_junit(tmp_path, tests=2), pytest_status=0)
     assert current_lane_pass(tmp_path, LANE) is None
 

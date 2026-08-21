@@ -106,10 +106,15 @@ FINAL_BUNDLE_BUILD_COMMIT   the commit CONTAINING the acceptance bundle. Everyth
 In every command below, <bundle-build-commit> means FINAL_BUNDLE_BUILD_COMMIT. There is no
 executable step that takes the science candidate.
 
-    SCIENCE_DESCRIBED_COMMIT
-        -> FINAL_BUNDLE_BUILD_COMMIT            (the commit that contains its bundle)
-        -> build sealed image FROM FINAL_BUNDLE_BUILD_COMMIT
-        -> bootstrap REQUIRED_COMMIT = FINAL_BUNDLE_BUILD_COMMIT
+CLOSURE_EVIDENCE_COMMIT     a LATER commit recording post-build H100 evidence. It never
+                            becomes the build commit and never implies a rebuild.
+
+    C  SCIENCE_DESCRIBED_COMMIT
+        -> B  FINAL_BUNDLE_BUILD_COMMIT         (the commit that contains its bundle)
+            -> build sealed image FROM B
+            -> bootstrap REQUIRED_COMMIT = B
+                -> H  CLOSURE_EVIDENCE_COMMIT   (evidence only; image_source_git_commit
+                                                 stays B forever)
 ```
 
 Never bootstrap the scientific candidate; that commit predates its own bundle.
@@ -196,8 +201,16 @@ git add manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json \
         artifacts/p0_pre/evidence/lanes/gpu_smoke.json \
         stage_acceptance/S00/12_S00B_CLOSURE.json
 git commit -m "S00-B: hardware closure evidence"
-make bundle && make bundle-verify
+make bundle-verify
 ```
+
+Do **not** regenerate the bundle after the closure commit. The bundle keeps describing the
+science commit `C`, the image stays permanently bound to the build commit `B`, and the closure
+commit `H` records evidence under other paths. Regenerating would re-date the bundle to `H`
+and make the correctly built image look stale.
+
+`bash scripts/bootstrap_runpod_s00b.sh` prints this same list on success, derived from the
+repository by `build_bundle.py --closure-artifacts`, so the two cannot drift apart.
 
 `S00B_IMAGE_RECORD.json` is written by `build_science_image.sh` on the build host and belongs
 in THIS commit, not in the build commit: it describes an image that does not exist until the

@@ -131,7 +131,7 @@ def test_f1_partial_collection_is_rejected(tmp_path: Path) -> None:
     observed["passed"] = 2
     _write(tmp_path, published)
     record, problems = validate_lane_evidence(tmp_path, LANE)
-    assert record is None and any("required tests" in p for p in problems)
+    assert record is None and any("authoritative suite" in p for p in problems)
 
 
 def test_f1_passed_must_account_for_every_collected_test(tmp_path: Path) -> None:
@@ -141,7 +141,7 @@ def test_f1_passed_must_account_for_every_collected_test(tmp_path: Path) -> None
     observed["passed"] = 3
     _write(tmp_path, published)
     record, problems = validate_lane_evidence(tmp_path, LANE)
-    assert record is None and any("does not account" in p for p in problems)
+    assert record is None and any("observed.passed" in p for p in problems)
 
 
 def test_f1_unparseable_record_is_rejected(tmp_path: Path) -> None:
@@ -190,3 +190,101 @@ def test_f5_closure_commit_lists_every_consumed_artifact(repo_root: Path) -> Non
         "stage_acceptance/S00/12_S00B_CLOSURE.json",
     ):
         assert required in closure_block, f"closure commit omits {required}"
+
+
+# ============================================================== F01 — authoritative count
+def test_f01_understated_expected_count_is_rejected(tmp_path: Path) -> None:
+    """The suite defines 8; a record claiming it only needed 2 must authorise nothing."""
+    _lane(tmp_path, count=8)
+    identity = write_environment_manifest(tmp_path)
+    _write(
+        tmp_path,
+        {
+            "schema": LANE_EVIDENCE_SCHEMA,
+            "status": "PASS",
+            "lane": LANE,
+            "environment_lock_sha256": identity,
+            "observed": {
+                "outcome": "PASS",
+                "recorded_utc": "2026-08-21T00:00:00+00:00",
+                "detail": "2/2",
+                "tests": 2,
+                "passed": 2,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "expected_tests": 2,
+            },
+        },
+    )
+    record, problems = validate_lane_evidence(tmp_path, LANE)
+    assert record is None, "an understated required count was accepted"
+    assert current_lane_pass(tmp_path, LANE) is None
+    assert any("authoritative suite requires 8" in p for p in problems), problems
+
+
+def test_f01_complete_authoritative_count_is_accepted(tmp_path: Path) -> None:
+    _published(tmp_path)
+    record, problems = validate_lane_evidence(tmp_path, LANE)
+    assert problems == [] and record is not None
+    observed = record["observed"]
+    assert isinstance(observed, dict)
+    assert observed["tests"] == observed["passed"] == observed["expected_tests"] == 8
+
+
+def test_f01_recorder_refuses_a_partial_run(tmp_path: Path) -> None:
+    from preflight import CaptureFailure
+
+    _lane(tmp_path, count=8)
+    write_environment_manifest(tmp_path)
+    with pytest.raises(CaptureFailure, match="requires exactly 8"):
+        record_lane_evidence(tmp_path, LANE, junit_xml=_junit(tmp_path, tests=2), pytest_status=0)
+
+
+def test_f01_parametrised_lane_cannot_derive_a_mandatory_count(tmp_path: Path) -> None:
+    """A parametrised case would make the collected count exceed the definition count."""
+    from preflight import CaptureFailure, expected_lane_test_count
+
+    directory = tmp_path / "tests" / LANE
+    directory.mkdir(parents=True)
+    (directory / "test_lane.py").write_text(
+        "import pytest\n"
+        '@pytest.mark.parametrize("x", [1, 2])\n'
+        "def test_case(x: int) -> None: ...\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(CaptureFailure, match="parametrised"):
+        expected_lane_test_count(tmp_path, LANE)
+
+
+def test_f01_live_lane_count_matches_the_real_suite(repo_root: Path) -> None:
+    from preflight import expected_lane_test_count
+
+    assert expected_lane_test_count(repo_root, LANE) == 8
+
+
+# ============================================================== F05 — one artifact list
+def test_f05_bootstrap_and_runbook_cannot_drift(repo_root: Path) -> None:
+    """Both derive the list from build_bundle, so they cannot disagree."""
+    import build_bundle
+
+    canonical = build_bundle.closure_artifact_paths(repo_root, "S00")
+    bootstrap = (repo_root / "scripts/bootstrap_runpod_s00b.sh").read_text(encoding="utf-8")
+    assert "--closure-artifacts" in bootstrap, "bootstrap must derive, not retype, the list"
+
+    runbook = (repo_root / "stage_acceptance/S00/10_REPRODUCE.md").read_text(encoding="utf-8")
+    block = runbook.split("git add ", 1)[1].split("git commit", 1)[0]
+    for rel in canonical:
+        assert rel in block, f"the runbook omits {rel}"
+
+
+def test_f05_canonical_list_covers_every_verifier(repo_root: Path) -> None:
+    """A fresh clone with these artifacts can run all three verifiers."""
+    import build_bundle
+
+    canonical = build_bundle.closure_artifact_paths(repo_root, "S00")
+    assert any("manifests/environments/" in p and "IMAGE_RECORD" not in p for p in canonical)
+    assert "manifests/environments/S00B_IMAGE_RECORD.json" in canonical
+    assert "artifacts/p0_pre/P0_PRE_READINESS.json" in canonical
+    assert "artifacts/p0_pre/evidence/lanes/gpu_smoke.json" in canonical
+    assert "stage_acceptance/S00/12_S00B_CLOSURE.json" in canonical

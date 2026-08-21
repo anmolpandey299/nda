@@ -114,8 +114,15 @@ S00B_BOOTSTRAP = PASS
   torch    $TORCH
   closure  stage_acceptance/S00/12_S00B_CLOSURE.json
 
-Commit the environment manifest, the readiness file and the closure record, then regenerate
-the bundle so the closure state is the described one.
+Commit EXACTLY these artifacts as the closure evidence commit. The list is derived from the
+repository, not typed here, so it cannot drift from 10_REPRODUCE.md:
+SUMMARY
+"$PY" scripts/build_bundle.py --root "$ROOT" --stage S00 --closure-artifacts \
+  | sed 's/^/  /'
+cat <<'SUMMARY'
+
+Do NOT regenerate the bundle afterwards: the image stays bound to the build commit, and the
+closure commit records evidence under other paths [F02].
 Throughput, peak VRAM and the BF16 tolerance are measured by their own runs and stay
 TBD_REQUIRES_HARDWARE until then [AUTH: 00 §0.2.4; 01 §30; 03 §8].
 SUMMARY

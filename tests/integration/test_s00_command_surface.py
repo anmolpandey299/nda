@@ -460,12 +460,20 @@ def test_s00b_bootstrap_never_reaches_capture_off_hardware(repo_root: Path) -> N
 
 
 # ------------------------------------------------- S00-B closure: runtime evidence lifecycle
+def _fake_gpu_lane(repo: Path, count: int = 8) -> None:
+    directory = repo / "tests" / "gpu_smoke"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "test_lane.py").write_text(
+        "".join(f"def test_case_{i}() -> None: ...\n" for i in range(count)), encoding="utf-8"
+    )
+
+
 def _valid_env(repo: Path, **overrides: object) -> str:
-    """An environment manifest whose baked image identity is well formed and current."""
-    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    """An environment manifest bound to the BUILD commit, not to HEAD."""
+    build = build_bundle.bundle_build_commit(repo, "S00")
     fields: dict[str, object] = {
         "docker_image_digest": DIGEST_A,
-        "image_source_git_commit": head,
+        "image_source_git_commit": build,
     }
     fields.update(overrides)
     return write_environment_manifest(repo, **fields)
@@ -482,10 +490,13 @@ def _prehardware_repo(tmp_path: Path) -> Path:
     _git(repo, "config", "user.email", "t@example.com")
     _git(repo, "config", "user.name", "t")
     (repo / "src" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    _fake_gpu_lane(repo)
     write_readiness(repo, compute_readiness(repo))
     _git(repo, "add", "-A")
     _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "pre-hardware")
     build_bundle.generate(repo, "S00")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "bundle")  # this commit is B
     return repo
 
 
@@ -661,6 +672,7 @@ def test_ordering_preflight_step_five_does_not_run_the_full_verifier(repo_root: 
 # ------------------------------------------------- S00-B gpu-smoke evidence persistence
 def test_gpu_smoke_success_is_persisted_as_lane_evidence(tmp_path: Path) -> None:
     """A lane that ran 8 real GPU tests must not still read NOT_RUN(NO_GPU) [AUTH: 02 §C6]."""
+    _fake_gpu_lane(tmp_path)
     identity = write_environment_manifest(tmp_path)
     record_lane_evidence(
         tmp_path,
@@ -689,6 +701,7 @@ def test_gpu_smoke_success_is_persisted_as_lane_evidence(tmp_path: Path) -> None
 
 def test_gpu_smoke_evidence_is_not_accepted_without_a_run_manifest(tmp_path: Path) -> None:
     """Recording a lane must not become a way to forge readiness [AUTH: 01 §16; 02 §C6]."""
+    _fake_gpu_lane(tmp_path)
     write_environment_manifest(tmp_path)
     record_lane_evidence(tmp_path, "gpu_smoke", junit_xml=_junit_report(tmp_path), pytest_status=0)
     lanes = compute_readiness(tmp_path)["evidence"]
@@ -1141,3 +1154,119 @@ def test_f02_image_source_commit_tampering_fails_runtime_verification(
     manifest.write_text(json.dumps(payload), encoding="utf-8")
     problems = build_bundle.verify_runtime(repo, "S00")
     assert problems, "standalone runtime verification missed image identity tampering"
+
+
+# ------------------------------------------------- F02: C -> B -> H commit role model
+def test_f02_three_commit_roles_survive_the_closure_commit(tmp_path: Path) -> None:
+    """science C -> bundle/build B -> image built FROM B -> evidence -> closure committed
+    at H. The image must stay bound to B; H must never imply a rebuild."""
+    repo, science, build = _lifecycle_repo(tmp_path)
+    assert build_bundle.described_commit(repo, "S00") == science
+    assert build_bundle.bundle_build_commit(repo, "S00") == build
+
+    _run_hardware(repo, build)
+    record = _write_closure(repo)
+    assert record["s00b_complete"] is True, build_bundle.closure_problems(record)
+
+    # Commit the closure evidence: this becomes H.
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "closure evidence")
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert head not in {science, build}, "H must be a distinct commit"
+
+    # Nothing may be re-dated by H.
+    assert build_bundle.described_commit(repo, "S00") == science
+    assert build_bundle.bundle_build_commit(repo, "S00") == build
+
+    assert build_bundle.verify_source(repo, "S00") == []
+    assert build_bundle.verify_runtime(repo, "S00") == []
+    assert build_bundle.verify_closure_record(repo, "S00") == []
+    assert build_bundle.verify(repo, "S00") == []
+
+    reread = build_bundle.closure_record(repo, "S00")
+    assert reread["image_record_state"] != "PENDING_REBUILD", "H forced a spurious rebuild"
+    assert reread["build_commit"] == build
+    assert reread["science_described_commit"] == science
+    assert reread["s00b_complete"] is True, build_bundle.closure_problems(reread)
+
+
+def test_f02_fresh_clone_at_h_verifies_and_holds_every_artifact(tmp_path: Path) -> None:
+    """A clone of the closure commit must contain everything the three verifiers need."""
+    repo, science, build = _lifecycle_repo(tmp_path)
+    _run_hardware(repo, build)
+    # build_science_image.sh writes this on the build host; the runbook commits it at H.
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
+        json.dumps({"sealed_image_digest": DIGEST_A, "source_git_commit": build}),
+        encoding="utf-8",
+    )
+    _write_closure(repo)
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "closure evidence")
+
+    clone = tmp_path / "clone"
+    _run(["git", "clone", "-q", str(repo), str(clone)], tmp_path)
+    for rel in build_bundle.closure_artifact_paths(clone, "S00"):
+        if "<" in rel:
+            continue
+        assert (clone / rel).is_file(), f"the closure commit omits {rel}"
+    assert build_bundle.verify(clone, "S00") == []
+    assert build_bundle.bundle_build_commit(clone, "S00") == build
+    assert build_bundle.described_commit(clone, "S00") == science
+
+
+# ------------------------------------------------- F03: forged closure summaries
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("science_described_commit", "0" * 40),
+        ("build_commit", "0" * 40),
+        ("environment_lock_sha256", "e" * 64),
+        ("sealed_image_digest", DIGEST_B),
+    ],
+)
+def test_f03_forged_closure_identity_fields_are_rejected(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    repo, _record = _closed_repo(tmp_path)
+    path = repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged[field] = value
+    path.write_text(json.dumps(forged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    problems = build_bundle.verify_closure_record(repo, "S00")
+    assert problems, f"a forged {field} passed verification"
+
+
+def test_f03_wrong_but_real_science_commit_is_rejected(tmp_path: Path) -> None:
+    repo, _record = _closed_repo(tmp_path)
+    other = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    path = repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged["science_described_commit"] = other
+    path.write_text(json.dumps(forged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    problems = build_bundle.verify_closure_record(repo, "S00")
+    assert any("science_described_commit" in p for p in problems), problems
+
+
+def test_f03_forged_readiness_summary_is_rejected(tmp_path: Path) -> None:
+    repo, _record = _closed_repo(tmp_path)
+    path = repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged["readiness"]["P0_PRE_READY"] = True
+    path.write_text(json.dumps(forged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    problems = build_bundle.verify_closure_record(repo, "S00")
+    assert any("readiness summary" in p for p in problems), problems
+
+
+def test_f03_forged_gpu_summary_is_rejected(tmp_path: Path) -> None:
+    repo, _record = _closed_repo(tmp_path)
+    path = repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged["gpu_smoke"]["tests"] = 0
+    path.write_text(json.dumps(forged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    problems = build_bundle.verify_closure_record(repo, "S00")
+    assert any("gpu_smoke summary" in p for p in problems), problems
+
+
+def test_f03_unmodified_closure_record_passes(tmp_path: Path) -> None:
+    repo, _record = _closed_repo(tmp_path)
+    assert build_bundle.verify_closure_record(repo, "S00") == []

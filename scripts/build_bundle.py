@@ -373,11 +373,13 @@ def _selected_environment(root: Path) -> tuple[Path | None, dict[str, object]]:
 
 
 def verify_closure_record(root: Path, stage: str) -> list[str]:
-    """Re-verify a closure record that already exists. Never regenerate it here.
+    """Re-verify an existing closure record. Never regenerate or mutate evidence.
 
-    A closure record is a claim about artifacts. Tampering with any artifact it hashed - the
-    GPU note, readiness, the environment manifest - must make verification fail, otherwise
-    closure evidence decays silently [AUTH: 01 §16, §26(13)].
+    A closure record is a set of CLAIMS. Every summary field is recomputed from its
+    authority - the bundle index, the Git graph, the validated environment manifest, the
+    canonically validated lane evidence and the readiness re-derivation - so a forged
+    summary cannot survive even when the artifact hashes happen to match
+    [AUTH: 01 §16, §26(13); 02 §C6].
     """
     path = root / CLOSURE_REL_TEMPLATE.format(stage=stage)
     if not path.is_file():
@@ -390,6 +392,71 @@ def verify_closure_record(root: Path, stage: str) -> list[str]:
     if not isinstance(record, dict):
         return ["12_S00B_CLOSURE.json is not a JSON object"]
 
+    head = git(root, "rev-parse", "HEAD").strip()
+    authoritative_c = described_commit(root, stage)
+    authoritative_b = bundle_build_commit(root, stage)
+
+    # A / B — commit identities recomputed from their authorities, not read from the record.
+    if record.get("science_described_commit") != authoritative_c:
+        problems.append(
+            "closure science_described_commit "
+            f"{str(record.get('science_described_commit'))[:12]} != the bundle's "
+            f"{authoritative_c[:12]}"
+        )
+    if record.get("build_commit") != authoritative_b:
+        problems.append(
+            f"closure build_commit {str(record.get('build_commit'))[:12]} != the commit that "
+            f"contains the bundle {authoritative_b[:12]}"
+        )
+
+    # C — the C -> B -> H graph.
+    if (
+        authoritative_c
+        and authoritative_b
+        and not _is_ancestor(root, authoritative_c, authoritative_b)
+    ):
+        problems.append("the science commit is not an ancestor of the build commit")
+    if authoritative_b and not _is_ancestor(root, authoritative_b, head):
+        problems.append("the build commit is not an ancestor of the current closure HEAD")
+
+    # F / G — environment and image identity from their authorities.
+    manifest_path, env_manifest = _selected_environment(root)
+    identity = environment_lock_sha256(env_manifest) if env_manifest else TBD
+    if record.get("environment_lock_sha256") != identity:
+        problems.append("closure environment identity is no longer the selected environment")
+    if env_manifest:
+        if record.get("sealed_image_digest") != env_manifest.get("docker_image_digest"):
+            problems.append("closure sealed image digest is no longer current")
+        if record.get("image_source_git_commit") != env_manifest.get("image_source_git_commit"):
+            problems.append("closure image source commit is no longer current")
+        state, image_problems = image_identity_state(root, env_manifest, authoritative_b)
+        if state not in ACCEPTED_IMAGE_STATES:
+            problems.extend(image_problems)
+        if record.get("image_record_state") != state:
+            problems.append(
+                f"closure image_record_state {record.get('image_record_state')!r} != the "
+                f"recomputed {state!r}"
+            )
+
+    if record.get("s00b_complete"):
+        # D — readiness summary against the authoritative re-derivation.
+        recomputed = compute_readiness(root, computed_by=READINESS_PRODUCER)
+        expected_readiness = {
+            key: recomputed.get(key)
+            for key in ("BACKEND_INTEGRATED", "SUITE_SCOPE", "P0_PRE_READY")
+        }
+        if record.get("readiness") != expected_readiness:
+            problems.append(
+                f"closure readiness summary {record.get('readiness')} != the authoritative "
+                f"re-derivation {expected_readiness}"
+            )
+        # E — GPU summary against the canonically validated lane evidence.
+        gpu_record, gpu_problems = validate_lane_evidence(root, GPU_LANE)
+        problems.extend(f"closure: {p}" for p in gpu_problems)
+        if gpu_record is not None and record.get("gpu_smoke") != gpu_record["observed"]:
+            problems.append("closure gpu_smoke summary does not match the validated lane evidence")
+
+    # H — every hashed artifact still exists and still hashes to the recorded value.
     produced = record.get("produced_artifact_sha256")
     if not isinstance(produced, dict) or not produced:
         problems.append("closure record hashes no produced artifacts")
@@ -400,33 +467,14 @@ def verify_closure_record(root: Path, stage: str) -> list[str]:
                 problems.append(f"closure artifact is missing: {rel}")
             elif sha256_file(target) != digest:
                 problems.append(f"closure artifact changed after closure: {rel}")
-        gpu_rel = f"{EVIDENCE_LANES_REL}/{GPU_LANE}.json"
-        if gpu_rel not in produced:
-            problems.append("closure record does not bind the GPU lane evidence it consumed")
-        readiness_rel = READINESS_REL
-        if readiness_rel not in produced:
-            problems.append("closure record does not bind the readiness artifact")
-
-    _, env_manifest = _selected_environment(root)
-    identity = environment_lock_sha256(env_manifest) if env_manifest else TBD
-    if record.get("environment_lock_sha256") != identity:
-        problems.append(
-            "closure record's environment identity is no longer the selected environment"
-        )
-    build_commit = git(root, "rev-parse", "HEAD").strip()
-    if record.get("build_commit") not in {build_commit, ""} and record.get("s00b_complete"):
-        problems.append(
-            f"closure record was made at build commit {str(record.get('build_commit'))[:12]},"
-            f" not {build_commit[:12]}"
-        )
-    if env_manifest:
-        if record.get("sealed_image_digest") != env_manifest.get("docker_image_digest"):
-            problems.append("closure record's sealed image digest is no longer current")
-        if record.get("image_source_git_commit") != env_manifest.get("image_source_git_commit"):
-            problems.append("closure record's image source commit is no longer current")
-    if record.get("s00b_complete"):
-        _, gpu_problems = validate_lane_evidence(root, GPU_LANE)
-        problems.extend(f"closure: {p}" for p in gpu_problems)
+        for required_rel in (f"{EVIDENCE_LANES_REL}/{GPU_LANE}.json", READINESS_REL):
+            if required_rel not in produced:
+                label = "GPU lane evidence" if GPU_LANE in required_rel else "readiness"
+                problems.append(f"closure record does not bind the {label} it consumed")
+        if manifest_path is not None:
+            env_rel = manifest_path.relative_to(root).as_posix()
+            if env_rel not in produced:
+                problems.append("closure record does not bind the environment manifest")
     return problems
 
 
@@ -454,7 +502,7 @@ def verify_runtime(root: Path, stage: str, *, check_closure: bool = True) -> lis
     # rather than only at closure.
     _, env_manifest = _selected_environment(root)
     if env_manifest:
-        build_commit = git(root, "rev-parse", "HEAD").strip()
+        build_commit = bundle_build_commit(root, stage)
         state, image_problems = image_identity_state(root, env_manifest, build_commit)
         if state not in ACCEPTED_IMAGE_STATES:
             problems.extend(image_problems)
@@ -480,6 +528,71 @@ def verify(root: Path, stage: str) -> list[str]:
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 #: States in which S00-B may complete. Everything else fails closed.
 ACCEPTED_IMAGE_STATES = frozenset({"CONSISTENT", "PENDING_COMMIT"})
+
+
+def bundle_build_commit(root: Path, stage: str) -> str:
+    """B — the commit that CONTAINS the acceptance bundle, derived from the Git graph.
+
+    Three commit roles must stay distinct [F02]:
+
+        C  science described commit   the candidate the bundle describes
+        B  bundle/build commit        the commit the sealed image is permanently built from
+        H  closure evidence commit    a later commit recording post-build H100 evidence
+
+    B is the commit that introduced the current artifact manifest, so it survives H: the
+    closure commit records evidence under other paths and never re-dates the bundle. Using
+    HEAD here would make the image look stale the moment closure is committed, and would
+    demand a rebuild that changes nothing.
+    """
+    manifest_rel = f"stage_acceptance/{stage}/05_ARTIFACT_MANIFEST.json"
+    result = subprocess.run(
+        ["git", "-C", str(root), "log", "-1", "--format=%H", "--", manifest_rel],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _is_ancestor(root: Path, older: str, newer: str) -> bool:
+    if older == newer:
+        return True
+    result = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", older, newer],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def described_commit(root: Path, stage: str) -> str:
+    """C — read from the authoritative bundle index."""
+    index_path = root / "stage_acceptance" / stage / "00_INDEX.md"
+    if not index_path.is_file():
+        return ""
+    match = HEAD_SHA_RE.search(index_path.read_text(encoding="utf-8"))
+    return match.group(1) if match else ""
+
+
+def closure_artifact_paths(root: Path, stage: str) -> list[str]:
+    """The exact artifacts a closure commit must preserve, derived from the repository.
+
+    One source of truth for the bootstrap's printed instructions and the runbook, so the two
+    cannot drift apart [F05]. A fresh clone containing these can run verify_source,
+    verify_runtime and verify_closure_record.
+    """
+    manifest_path, _ = _selected_environment(root)
+    paths = [
+        manifest_path.relative_to(root).as_posix()
+        if manifest_path
+        else "manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json",
+        IMAGE_RECORD_REL,
+        READINESS_REL,
+        f"{EVIDENCE_LANES_REL}/{GPU_LANE}.json",
+        CLOSURE_REL_TEMPLATE.format(stage=stage),
+    ]
+    return paths
 
 
 def _is_commit(root: Path, sha: object) -> bool:
@@ -580,32 +693,32 @@ def closure_problems(record: dict[str, object]) -> list[str]:
 def closure_record(root: Path, stage: str) -> dict[str, object]:
     """Evidence produced by an actual S00-B hardware run, built from VERIFIED values.
 
-    Closure does not assume the caller ran `make bundle-verify` first: it reuses the same
-    source and runtime verifiers, re-derives readiness authoritatively, and constructs every
-    field from the verified or re-derived value rather than copying mutable stored JSON
-    [AUTH: 01 §16, §26(13); 02 §C6; plan §19].
+    Preserves the three commit roles: the bundle keeps describing C, the image stays bound to
+    B, and the record may be committed later at H without implying a rebuild [F02].
     """
     problems: list[str] = []
-    build_commit = git(root, "rev-parse", "HEAD").strip()
+    head = git(root, "rev-parse", "HEAD").strip()
+    science_commit = described_commit(root, stage)
+    build_commit = bundle_build_commit(root, stage)
 
-    described = ""
-    index_path = root / "stage_acceptance" / stage / "00_INDEX.md"
-    if index_path.is_file():
-        match = HEAD_SHA_RE.search(index_path.read_text(encoding="utf-8"))
-        described = match.group(1) if match else ""
-    if not described:
+    if not science_commit:
         problems.append("the bundle records no described commit")
-    elif described != build_commit:
-        ancestor = subprocess.run(
-            ["git", "-C", str(root), "merge-base", "--is-ancestor", described, build_commit],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if ancestor.returncode != 0:
+    elif not _is_commit(root, science_commit):
+        problems.append(f"the described commit {science_commit[:12]} is not a commit")
+    if not build_commit:
+        problems.append("the bundle has not been committed, so there is no build commit")
+    elif not _is_commit(root, build_commit):
+        problems.append(f"the build commit {build_commit[:12]} is not a commit")
+
+    if science_commit and build_commit:
+        if not _is_ancestor(root, science_commit, build_commit):
             problems.append(
-                f"the described commit {described[:12]} is not an ancestor of the build "
+                f"the science commit {science_commit[:12]} is not an ancestor of the build "
                 f"commit {build_commit[:12]}"
+            )
+        if not _is_ancestor(root, build_commit, head):
+            problems.append(
+                f"the build commit {build_commit[:12]} is not an ancestor of HEAD {head[:12]}"
             )
 
     problems.extend(verify_source(root, stage))
@@ -626,7 +739,6 @@ def closure_record(root: Path, stage: str) -> dict[str, object]:
     gpu_record, gpu_problems = validate_lane_evidence(root, GPU_LANE)
     problems.extend(gpu_problems)
 
-    # Authoritative readiness: re-derived here, then compared with what is on disk.
     recomputed = compute_readiness(root, computed_by=READINESS_PRODUCER)
     readiness_path = root / READINESS_REL
     stored = (
@@ -656,8 +768,9 @@ def closure_record(root: Path, stage: str) -> dict[str, object]:
     return {
         "stage": stage,
         "authority": "01 §16, §26(13); 02 §C6; plan §19",
-        "science_described_commit": described,
+        "science_described_commit": science_commit,
         "build_commit": build_commit,
+        "closure_head_commit": head,
         "image_source_git_commit": env_manifest.get("image_source_git_commit", TBD),
         "sealed_image_digest": env_manifest.get("docker_image_digest", TBD),
         "image_record_state": image_state,
@@ -669,13 +782,14 @@ def closure_record(root: Path, stage: str) -> dict[str, object]:
             for key in ("BACKEND_INTEGRATED", "SUITE_SCOPE", "P0_PRE_READY")
         },
         "produced_artifact_sha256": produced,
+        "closure_commit_artifacts": closure_artifact_paths(root, stage),
         "problems": problems,
         "s00b_complete": complete,
         "note": (
-            "Runtime evidence from one hardware run, built from re-derived values. P0 "
-            "evidence eligibility is a separate and stricter question: the GPU lane may be a "
-            "genuine S00-B PASS while readiness still classifies it NON_EVIDENTIARY because "
-            "no S01 RUN_ID exists."
+            "The image stays bound to the build commit. Committing this record at a later "
+            "HEAD records evidence; it never implies a rebuild. P0 evidence eligibility is "
+            "separate: the GPU lane may be a genuine S00-B PASS while readiness still "
+            "classifies it NON_EVIDENTIARY because no S01 RUN_ID exists."
         ),
     }
 
@@ -684,6 +798,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", default=".")
     ap.add_argument("--stage", default="S00")
+    ap.add_argument(
+        "--closure-artifacts",
+        action="store_true",
+        dest="closure_artifacts",
+        help="print the exact artifacts a closure commit must preserve",
+    )
     ap.add_argument(
         "--verify", action="store_true", help="full closure verification: source + runtime evidence"
     )
@@ -707,6 +827,11 @@ def main(argv: list[str] | None = None) -> int:
             print(p, file=sys.stderr)
         print(f"{label}: {len(problems)} problem(s)", file=sys.stderr)
         return 1 if problems else 0
+
+    if args.closure_artifacts:
+        for rel in closure_artifact_paths(root, args.stage):
+            print(rel)
+        return 0
 
     if args.closure:
         try:
