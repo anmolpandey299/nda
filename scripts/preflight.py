@@ -14,6 +14,7 @@ backend, GPU or benchmark lanes; it verifies their provenance-bound evidence rec
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import re
@@ -318,6 +319,38 @@ def _load_namespace(base: Path, keys: tuple[str, ...]) -> dict[str, object]:
     return out
 
 
+def record_lane_evidence(
+    root: Path, key: str, outcome: str, detail: str = "", *, now: str | None = None
+) -> Path:
+    """Persist what a lane actually did, so readiness DERIVES the lane state.
+
+    A lane that executed and passed must not still read `NOT_RUN` in readiness. The record is
+    written into the lane evidence namespace and bound to the current environment identity;
+    whether it is *accepted* as evidentiary is decided by verify_evidence_record, which still
+    requires a run manifest. At S00 that machinery does not exist yet (S01 owns it), so the
+    lane is recorded as observed-PASS but not accepted, and the flags stay false
+    [AUTH: 02 §C6; 01 §16, §39 S01].
+    """
+    if key not in EVIDENCE_KEYS:
+        raise ValueError(f"unknown lane {key!r}; expected one of {', '.join(EVIDENCE_KEYS)}")
+    stamp = now or datetime.datetime.now(datetime.UTC).isoformat()
+    record = {
+        "status": outcome,
+        "lane": key,
+        "environment_lock_sha256": current_environment_lock(root),
+        "observed": {"outcome": outcome, "recorded_utc": stamp, "detail": detail.strip()},
+        "note": (
+            "Lane execution record. Acceptance as readiness evidence additionally requires a"
+            " run manifest under manifests/runs/, which S01 introduces [AUTH: 01 §16, §39 S01]."
+        ),
+    }
+    base = root / EVIDENCE_LANES_REL
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / f"{key}.json"
+    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
 def load_lane_evidence(root: Path) -> dict[str, object]:
     return _load_namespace(root / EVIDENCE_LANES_REL, EVIDENCE_KEYS)
 
@@ -352,13 +385,17 @@ def compute_readiness(root: Path, computed_by: str = "PREFLIGHT_STEP_8") -> dict
         else:
             verdict = EvidenceVerdict(key, False, default_status[key])
         accepted[key] = verdict.accepted
-        entry: dict[str, str] = {
+        entry: dict[str, object] = {
             "status": verdict.status
             if verdict.accepted
             else (verdict.status or default_status[key])
         }
         if verdict.reason:
             entry["reason"] = verdict.reason
+        # A lane that ran must say so, even when its record is not yet accepted as evidence.
+        raw = lane_records.get(key)
+        if isinstance(raw, dict) and isinstance(raw.get("observed"), dict):
+            entry["observed"] = raw["observed"]
         evidence[key] = entry
 
     software_gate: dict[str, object] = {}
@@ -523,12 +560,24 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--root", default=".")
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument(
+        "--record-lane",
+        metavar="LANE",
+        help="persist a lane execution record into the evidence namespace",
+    )
+    ap.add_argument("--outcome", default="PASS")
+    ap.add_argument("--detail", default="")
+    ap.add_argument(
         "--backend-integrated",
         metavar="READINESS_JSON",
         help="exit 0 if BACKEND_INTEGRATED, 1 if not, 2 if unreadable",
     )
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
+
+    if args.record_lane:
+        written = record_lane_evidence(root, args.record_lane, args.outcome, args.detail)
+        print(f"recorded {args.record_lane} = {args.outcome} in {written.relative_to(root)}")
+        return 0
 
     if args.backend_integrated:
         code, message = backend_integrated_exit_code(Path(args.backend_integrated))

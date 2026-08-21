@@ -273,8 +273,13 @@ def _verify_runtime_evidence(root: Path, listed: dict[str, str]) -> list[str]:
     return problems
 
 
-def verify(root: Path, stage: str) -> list[str]:
-    """Exact-value verification, not presence checking."""
+def verify_source(root: Path, stage: str) -> list[str]:
+    """The IMMUTABLE half: described commit, source drift, diff, and source artifact hashes.
+
+    Safe to run at any point in the ordered gate, because nothing it inspects is produced by
+    execution. This is what preflight step 5 may use; the runtime half cannot be evaluated
+    until step 8 has re-derived readiness for the current environment.
+    """
     problems: list[str] = []
     bundle = root / "stage_acceptance" / stage
     index_path = bundle / "00_INDEX.md"
@@ -324,13 +329,35 @@ def verify(root: Path, stage: str) -> list[str]:
                 problems.append(f"manifest lists a missing source artifact: {rel}")
             elif sha256_file(path) != digest:
                 problems.append(f"source artifact hash mismatch: {rel}")
+    return problems
 
+
+def verify_runtime(root: Path, stage: str) -> list[str]:
+    """The RUNTIME half: readiness must equal its re-derivation for the current environment.
+
+    Only meaningful once readiness has been written for the runtime evidence in play, i.e.
+    after preflight step 8. Running it earlier is a circular ordering dependency.
+    """
+    manifest_path = root / "stage_acceptance" / stage / "05_ARTIFACT_MANIFEST.json"
+    if not manifest_path.is_file():
+        return [f"{stage}: bundle is missing 05_ARTIFACT_MANIFEST.json"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     runtime = manifest.get("runtime_evidence")
     if not isinstance(runtime, dict):
-        problems.append("05_ARTIFACT_MANIFEST.json has no runtime_evidence section")
-    else:
-        problems.extend(_verify_runtime_evidence(root, runtime))
-    return problems
+        return ["05_ARTIFACT_MANIFEST.json has no runtime_evidence section"]
+    return _verify_runtime_evidence(root, runtime)
+
+
+def verify(root: Path, stage: str) -> list[str]:
+    """Full closure verification: immutable source AND runtime evidence.
+
+    This is the FINAL gate. The bootstrap runs it after capture, the GPU lane and the
+    complete preflight, never inside the ordered gate itself.
+    """
+    problems = verify_source(root, stage)
+    if any("missing 00_INDEX.md" in p or "does not exist" in p for p in problems):
+        return problems
+    return problems + verify_runtime(root, stage)
 
 
 def closure_record(root: Path, stage: str) -> dict[str, object]:
@@ -379,18 +406,28 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", default=".")
     ap.add_argument("--stage", default="S00")
-    ap.add_argument("--verify", action="store_true")
+    ap.add_argument(
+        "--verify", action="store_true", help="full closure verification: source + runtime evidence"
+    )
+    ap.add_argument(
+        "--verify-source",
+        action="store_true",
+        dest="verify_source",
+        help="immutable half only; safe inside the ordered gate",
+    )
     ap.add_argument(
         "--closure", action="store_true", help="write the S00-B hardware closure record"
     )
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
 
-    if args.verify:
-        problems = verify(root, args.stage)
+    if args.verify or args.verify_source:
+        source_only = args.verify_source and not args.verify
+        problems = (verify_source if source_only else verify)(root, args.stage)
+        label = "bundle-verify-source" if source_only else "bundle-verify"
         for p in problems:
             print(p, file=sys.stderr)
-        print(f"bundle-verify: {len(problems)} problem(s)", file=sys.stderr)
+        print(f"{label}: {len(problems)} problem(s)", file=sys.stderr)
         return 1 if problems else 0
 
     if args.closure:

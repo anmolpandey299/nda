@@ -5,6 +5,7 @@ Multiple modules with tiny fixtures, no network [AUTH: 01 §22 Integration; plan
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import shutil
@@ -24,6 +25,7 @@ from preflight import (
     assert_clean_production_tree,
     compute_readiness,
     production_tree_dirty,
+    record_lane_evidence,
     run_steps,
     write_readiness,
 )
@@ -329,12 +331,16 @@ def test_fix1_branch_c_unreadable_readiness_is_a_hard_failure(
 
 # ------------------------------------------------------------------ FIX 8: bundle exactness
 def test_fix8_committed_bundle_describes_the_current_code(repo_root: Path) -> None:
-    problems = build_bundle.verify(repo_root, "S00")
+    """Immutable half only. The live repository may be mid-run: capture has produced a new
+    environment identity and readiness is not re-derived until preflight step 8, so asserting
+    the runtime half here is a circular ordering dependency. The runtime half is covered by
+    controlled fixtures below and by the bootstrap's final gate."""
+    problems = build_bundle.verify_source(repo_root, "S00")
     assert problems == [], problems
 
 
-def test_fix8_bundle_verify_target_passes(repo_root: Path) -> None:
-    assert _run(["make", "bundle-verify"], repo_root).returncode == 0
+def test_fix8_bundle_verify_source_target_passes(repo_root: Path) -> None:
+    assert _run(["make", "bundle-verify-source"], repo_root).returncode == 0
 
 
 def test_fix8_drift_after_the_described_commit_is_detected(tmp_path: Path) -> None:
@@ -536,3 +542,140 @@ def test_closure_record_captures_the_hardware_run(tmp_path: Path) -> None:
     readiness = record["readiness"]
     assert isinstance(readiness, dict)
     assert readiness["P0_PRE_READY"] is False, "no evidence records, so still not ready"
+
+
+# ------------------------------------------------- S00-B ordering: verification vs the gate
+def test_ordering_integration_must_not_require_final_readiness(tmp_path: Path) -> None:
+    """The exact real-H100 failure, reproduced.
+
+    capture publishes a new environment identity -> preflight starts -> integration (step 5)
+    ran FULL bundle verification -> the verifier re-derived readiness against the new
+    environment while readiness still held the pre-run identity -> step 5 failed -> step 8
+    write-readiness was never reached -> readiness could never become consistent.
+    """
+    repo = _prehardware_repo(tmp_path)
+    assert build_bundle.verify(repo, "S00") == []
+
+    identity = write_environment_manifest(repo)  # step 8 of the bootstrap
+    stored = json.loads(
+        (repo / "artifacts/p0_pre/P0_PRE_READINESS.json").read_text(encoding="utf-8")
+    )
+    assert stored["environment_lock_sha256"] == TBD, "readiness is still the pre-run one"
+
+    # This is the state preflight step 5 runs in. The immutable half must pass...
+    assert build_bundle.verify_source(repo, "S00") == [], "source half must be evaluable now"
+    # ...while the runtime half is legitimately inconsistent until step 8 has run.
+    runtime_problems = build_bundle.verify_runtime(repo, "S00")
+    assert any("re-derivation" in p for p in runtime_problems), runtime_problems
+
+    write_readiness(repo, compute_readiness(repo))  # preflight step 8
+    assert (
+        json.loads((repo / "artifacts/p0_pre/P0_PRE_READINESS.json").read_text(encoding="utf-8"))[
+            "environment_lock_sha256"
+        ]
+        == identity
+    )
+    assert build_bundle.verify(repo, "S00") == [], "the final gate must pass after step 8"
+
+
+def test_ordering_bootstrap_runs_the_full_verifier_after_preflight(repo_root: Path) -> None:
+    script = (repo_root / "scripts" / "bootstrap_runpod_s00b.sh").read_text(encoding="utf-8")
+    order = [
+        script.index("make env-capture"),
+        script.index("make gpu-smoke"),
+        script.index("make preflight"),
+        script.index("make bundle-verify"),
+        script.index("make closure"),
+    ]
+    assert order == sorted(order), "the final verifier must follow capture, GPU and preflight"
+    assert "make bundle-verify-source" not in script, "the bootstrap gate is the full one"
+
+
+def test_ordering_preflight_step_five_does_not_run_the_full_verifier(repo_root: Path) -> None:
+    """No integration test may run the FULL verifier against the live repository.
+
+    Checked structurally rather than by grepping, because a grep for the forbidden call
+    matches the assertion that forbids it.
+    """
+    module = ast.parse(
+        (repo_root / "tests" / "integration" / "test_s00_command_surface.py").read_text(
+            encoding="utf-8"
+        )
+    )
+    offenders: list[str] = []
+    for function in [n for n in module.body if isinstance(n, ast.FunctionDef)]:
+        uses_live_repo = any(
+            isinstance(arg, ast.arg) and arg.arg == "repo_root" for arg in function.args.args
+        )
+        if not uses_live_repo:
+            continue
+        for call in [n for n in ast.walk(function) if isinstance(n, ast.Call)]:
+            func = call.func
+            is_full_verify = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "verify"
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "build_bundle"
+            )
+            names = {a.id for a in call.args if isinstance(a, ast.Name)}
+            if is_full_verify and "repo_root" in names:
+                offenders.append(f"{function.name}: build_bundle.verify(repo_root)")
+            if (
+                isinstance(func, ast.Name)
+                and func.id == "_run"
+                and "bundle-verify" in ast.dump(call)
+                and "bundle-verify-source" not in ast.dump(call)
+                and "repo_root" in names
+            ):
+                offenders.append(f"{function.name}: make bundle-verify on the live repo")
+    assert offenders == [], offenders
+
+
+# ------------------------------------------------- S00-B gpu-smoke evidence persistence
+def test_gpu_smoke_success_is_persisted_as_lane_evidence(tmp_path: Path) -> None:
+    """A lane that ran 8 real GPU tests must not still read NOT_RUN(NO_GPU) [AUTH: 02 §C6]."""
+    identity = write_environment_manifest(tmp_path)
+    record_lane_evidence(tmp_path, "gpu_smoke", "PASS", "8 passed, 0 skipped in 3.1s")
+
+    readiness = compute_readiness(tmp_path)
+    lanes = readiness["evidence"]
+    assert isinstance(lanes, dict)
+    entry = lanes["gpu_smoke"]
+    assert isinstance(entry, dict)
+    assert entry["status"] != "NOT_RUN(NO_GPU)"
+    observed = entry["observed"]
+    assert isinstance(observed, dict)
+    assert observed["outcome"] == "PASS"
+    assert "8 passed" in observed["detail"]
+
+    # Correct S00 state is unchanged: the record is observed, not yet evidentiary.
+    assert readiness["BACKEND_INTEGRATED"] is False
+    assert readiness["SUITE_SCOPE"] == "STATISTICAL_STACK_ONLY"
+    assert readiness["P0_PRE_READY"] is False
+    assert identity == readiness["environment_lock_sha256"]
+
+
+def test_gpu_smoke_evidence_is_not_accepted_without_a_run_manifest(tmp_path: Path) -> None:
+    """Recording a lane must not become a way to forge readiness [AUTH: 01 §16; 02 §C6]."""
+    write_environment_manifest(tmp_path)
+    record_lane_evidence(tmp_path, "gpu_smoke", "PASS", "8 passed")
+    lanes = compute_readiness(tmp_path)["evidence"]
+    assert isinstance(lanes, dict)
+    entry = lanes["gpu_smoke"]
+    assert isinstance(entry, dict)
+    assert entry["status"] == "NON_EVIDENTIARY"
+    assert "run_id" in str(entry["reason"])
+
+
+def test_gpu_smoke_recorder_rejects_an_unknown_lane(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="unknown lane"):
+        record_lane_evidence(tmp_path, "not_a_lane", "PASS")
+
+
+def test_gpu_smoke_recipe_records_only_on_success(repo_root: Path) -> None:
+    recipe = (repo_root / "Makefile").read_text(encoding="utf-8")
+    lane = recipe.split("gpu-smoke:", 1)[1].split("\n\n", 1)[0]
+    assert "--record-lane gpu_smoke" in lane
+    record_at = lane.index("--record-lane")
+    assert lane.index("exit $$s") < record_at, "a failing lane must not record PASS"
+    assert lane.index("zero tests collected") < record_at

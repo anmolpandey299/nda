@@ -91,6 +91,31 @@ clean tree, an H100, Python 3.13.x, torch 2.13.0+cu130, `torch.cuda.is_available
 capability (9, 0), and the sealed image metadata; then runs `make env-capture`,
 `make gpu-smoke`, `make preflight` and `make bundle-verify`.
 
+### S00-B ordering — what runs when, and why
+
+```text
+immutable image / source            built off-pod, digest-pinned, hash-bound
+        |
+runtime environment capture         make env-capture -> manifests/environments/<64hex>.json
+        |
+hardware lane / evidence            make gpu-smoke -> evidence/lanes/gpu_smoke.json
+        |
+ordered preflight  steps 0-6        step 5 integration uses BUNDLE-VERIFY-SOURCE only
+        |
+readiness re-derivation  step 8     P0_PRE_READINESS.json rewritten for THIS environment
+        |
+final runtime-aware verification    make bundle-verify   (source AND runtime)
+        |
+closure record                      make closure -> 12_S00B_CLOSURE.json
+```
+
+The split matters. `bundle-verify-source` checks the described commit, source drift, the diff
+and the source artifact hashes — none of which execution touches, so it is safe anywhere in
+the ordered gate. `bundle-verify` additionally re-derives readiness, which is only meaningful
+once step 8 has written readiness for the environment currently in play. Running the full
+verifier at step 5 is circular: readiness still holds the pre-run identity, step 5 fails, and
+step 8 is never reached, so readiness can never become consistent.
+
 ### Step 4 — close S00-B
 
 The bootstrap ends with two verification steps that are deliberately different in kind:

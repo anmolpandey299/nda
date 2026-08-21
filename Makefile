@@ -7,7 +7,8 @@ PYTEST = $(PY) -m pytest
 READINESS ?= artifacts/p0_pre/P0_PRE_READINESS.json
 
 .PHONY: format lint typecheck unit integration synthetic backend-contract gpu-smoke \
-        env-capture preflight bundle bundle-verify closure review-worktree
+        env-capture preflight bundle bundle-verify bundle-verify-source \
+        closure review-worktree
 
 ## make format [CHECK=1] — apply, or verify without mutating [AUTH: 01 §33; plan D5]
 format:
@@ -56,11 +57,16 @@ gpu-smoke:
 	@if ! command -v nvidia-smi >/dev/null 2>&1; then \
 	   echo "gpu-smoke: NOT_RUN(NO_GPU) [AUTH: 01 §21; 03 §8]"; \
 	 else \
-	   $(PYTEST) tests/gpu_smoke; s=$$?; \
+	   out=$$(mktemp); $(PYTEST) tests/gpu_smoke > $$out 2>&1; s=$$?; cat $$out; \
 	   if [ $$s -eq 5 ]; then \
 	     echo "gpu-smoke: FAIL zero tests collected; the lane cannot report a state" >&2; \
-	     exit 1; \
-	   elif [ $$s -ne 0 ]; then exit $$s; fi; fi
+	     rm -f $$out; exit 1; \
+	   elif [ $$s -ne 0 ]; then rm -f $$out; exit $$s; \
+	   else \
+	     $(PY) scripts/preflight.py --record-lane gpu_smoke --outcome PASS \
+	       --detail "$$(tail -1 $$out)"; \
+	     rm -f $$out; \
+	   fi; fi
 
 ## 01 §12 steps 2-9 on the real H100 image; every value TBD_REQUIRES_HARDWARE until then
 env-capture:
@@ -78,7 +84,13 @@ bundle:
 closure:
 	$(PY) scripts/build_bundle.py --root . --stage S00 --closure
 
-## fail if the committed bundle does not describe the current code exactly
+## immutable half only: described commit, source drift, source artifact hashes.
+## Safe inside the ordered gate; the runtime half needs preflight step 8 to have run.
+bundle-verify-source:
+	$(PY) scripts/build_bundle.py --root . --stage S00 --verify-source
+
+## FINAL closure gate: immutable source AND runtime evidence. Runs after capture, the GPU
+## lane and the complete preflight, never inside the ordered gate.
 bundle-verify:
 	$(PY) scripts/build_bundle.py --root . --stage S00 --verify
 

@@ -58,7 +58,7 @@ S00 is the root commit of the repository; the base is git's empty tree.
 ## 5. Head git commit
 
 ```text
-head git commit = 88ab18e7dd60cdc8dc706507bfdebc4444f6b6af
+head git commit = c5756e18b4bfe45028afeaeae98717fcc3b31355
 ```
 
 `make bundle-verify` fails if any path outside `stage_acceptance/S00/` or

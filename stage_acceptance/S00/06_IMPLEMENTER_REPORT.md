@@ -422,6 +422,77 @@ specific H100 environment. It is deliberately not hardcoded anywhere in `src/`, 
 and is not in this repository; it is committed by the Step 4 flow above.
 
 
+## 3G. S00-B ordering repair, and GPU evidence persistence
+
+The second real H100 run reached gate 10 and failed inside preflight step 5 with
+`P0_PRE_READINESS.json does not match its re-derivation; differing keys:
+environment_lock_sha256`.
+
+### Defect 1 — the verifier ran inside the gate it depends on
+
+Two integration tests ran the FULL bundle verifier against the LIVE repository. Preflight
+step 5 runs the integration lane, so the ordering was circular:
+
+```text
+capture publishes a new environment identity
+  -> preflight starts
+  -> step 5 integration runs full bundle verification
+  -> the verifier re-derives readiness against the NEW environment
+  -> readiness on disk still holds the PRE-RUN identity
+  -> step 5 fails
+  -> step 8 write-readiness is never reached
+  -> readiness can never become consistent
+```
+
+Verification is now split by what it inspects, not by convenience:
+
+```text
+verify_source    described commit, source drift, diff, changed files, source artifact hashes.
+                 Nothing execution touches. Safe anywhere in the ordered gate.
+                 `make bundle-verify-source`.
+verify_runtime   readiness re-derivation and environment-manifest identity recomputation.
+                 Only meaningful after step 8. Never run inside the gate.
+verify           both. The FINAL closure gate, run by the bootstrap after capture, the GPU
+                 lane and the complete preflight.
+```
+
+The live-repository integration test now calls `verify_source`; the runtime half is covered
+by controlled temp-repository fixtures that reproduce the exact H100 sequence, including an
+assertion that the full verifier *does* fail before step 8 and passes after it. An AST-based
+test forbids any future integration test from calling the full verifier on the live repo —
+written structurally because a grep for the forbidden call matches the assertion forbidding it.
+
+### Defect 2 — a passing GPU lane was not persisted
+
+`make gpu-smoke` ran pytest and recorded nothing, so after eight real GPU tests passed,
+readiness still read `gpu_smoke: NOT_RUN(NO_GPU)`. Nothing anywhere wrote into the lane
+evidence namespace; there were only readers.
+
+`make gpu-smoke` now writes `artifacts/p0_pre/evidence/lanes/gpu_smoke.json` on success only
+— after the zero-collection guard and after a non-zero exit — and readiness DERIVES the lane
+state from it rather than being edited. The entry now reads:
+
+```json
+"gpu_smoke": {"status": "NON_EVIDENTIARY",
+              "reason": "missing or malformed run_id",
+              "observed": {"outcome": "PASS", "detail": "8 passed, 0 skipped in 3.1s",
+                           "recorded_utc": "..."}}
+```
+
+which is the honest statement: the lane executed and passed, and the record is not yet
+*evidentiary* because a bound run manifest requires the RUN_ID machinery S01 introduces
+[AUTH: 01 §16, §39 S01]. `BACKEND_INTEGRATED`, `SUITE_SCOPE` and `P0_PRE_READY` are unchanged
+and still false, which is correct at S00. Recording a lane cannot forge readiness — there is
+a test for that.
+
+### Preserved
+
+Source artifacts remain hash-bound; runtime evidence keeps its provenance; readiness is still
+verified by re-derivation, so forged readiness and tampered environment identities still fail;
+stale source bundles still fail. `b7356e1c…` and the earlier `aa64d5f2…` are evidence from two
+specific H100 environments and are hardcoded nowhere — a test enforces it for both.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.
