@@ -13,6 +13,12 @@
 # No `pip install -U` ever runs inside an experiment [AUTH: 01 §12].
 
 # uv is pinned to the exact version that produced uv.lock.
+# Global build arguments used by later FROM instructions.
+# Valid defaults are required so Docker can parse every stage during pass 1.
+# scripts/build_science_image.sh overrides these with the immutable pass-1 science image.
+ARG SEALED_PARENT_REF=python:3.13-slim
+ARG SEALED_PARENT_DIGEST=sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
+
 FROM ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 AS uvbin
 
 # ---------------------------------------------------------------- cpu-dev lane (S00-A)
@@ -63,8 +69,6 @@ COPY . .
 # The sealed image is one metadata layer on top of an immutable parent, so the identity it
 # reports is verifiable from the registry. capture_environment.sh reads it from inside the
 # image and never trusts an environment variable [AUTH: 01 §12(8)(9), §16; 03 §8].
-ARG SEALED_PARENT_REF=TBD_REQUIRES_HARDWARE
-ARG SEALED_PARENT_DIGEST=TBD_REQUIRES_HARDWARE
 FROM ${SEALED_PARENT_REF}@${SEALED_PARENT_DIGEST} AS science-sealed
 ARG SEALED_PARENT_REF
 ARG SEALED_PARENT_DIGEST
