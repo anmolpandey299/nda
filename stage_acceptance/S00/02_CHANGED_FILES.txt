@@ -25,6 +25,7 @@ logs/.gitkeep
 manifests/data/.gitkeep
 manifests/environments/.gitkeep
 manifests/environments/AI_ENGINEERING_STACK_S00.json
+manifests/environments/S00B_HARDWARE_PROBE.json
 manifests/models/.gitkeep
 manifests/runs/.gitkeep
 pyproject.toml
@@ -36,7 +37,9 @@ reviews/S00/CODEX_REVIEW.md
 reviews/S00/STAGE_IMPLEMENTATION_REPORT.md
 reviews/S00/deferred.md
 reviews/S00/scratch/.gitkeep
+scripts/bootstrap_runpod_s00b.sh
 scripts/build_bundle.py
+scripts/build_science_image.sh
 scripts/capture_environment.sh
 scripts/check_repo_invariants.py
 scripts/install_git_hooks.sh
@@ -106,4 +109,5 @@ tests/synthetic/__init__.py
 tests/unit/__init__.py
 tests/unit/test_s00_final_fixes.py
 tests/unit/test_s00_invariants.py
+tests/unit/test_s00b_science_image.py
 uv.lock

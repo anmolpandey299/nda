@@ -282,18 +282,28 @@ this commit alone [AUTH: 01 §33, §46; plan §5.2, C-03 closure].
 ## 6. Git commit / status
 
 ```text
-branch      stage/s00           (main and experiment-frozen do not exist yet; they are
-                                 created at acceptance and are protected [AUTH: 01 §27])
-commits     f7e6ee0eadfb9550a1c5a1f74a0029960baedcf5  "S00: repository bootstrap" (root)
-            aaac605d51ce04614f76a4b846367f6eef26893c  "S00: acceptance bundle, report,
-                                                       AI-stack provenance"
-            this report and the refreshed artifact manifest are recorded in the commit that
-            follows aaac605, because a manifest cannot hash the commit containing it
-core.hooksPath  .githooks
-working tree    clean at hand-off; production_tree_dirty() reports []
+branch             stage/s00   (main and experiment-frozen do not exist yet; they are created
+                                at acceptance and are protected [AUTH: 01 §27])
+candidate commit   ecaaaf6d6ac68c50d7ab97aa7312fbbeb14f31d1
+                   "S00-B: frozen science image specification"
+history            f7e6ee0 bootstrap
+                   aaac605 acceptance bundle + AI-stack provenance
+                   e481543 report / manifest refresh
+                   27ab476 final implementation-fix pass (FIX 1-9)
+                   4d0bdaf bundle regenerated for 27ab476
+                   ecaaaf6 S00-B science image specification   <- candidate
+bundle commit      HEAD, carrying only stage_acceptance/S00/ and reviews/S00/ artifacts
+core.hooksPath     .githooks
+working tree       clean; production_tree_dirty() reports []
 ```
 
-Nothing was pushed. No tag was created; tagging is an acceptance action [AUTH: 01 §27].
+The bundle describes the candidate commit exactly. A committed file cannot contain the SHA256
+of the commit that contains it, so `make bundle-verify` proves the equivalent property
+mechanically: it fails if any path outside `stage_acceptance/S00/` or `reviews/S00/` differs
+between the described commit and HEAD.
+
+Nothing was pushed. No tag was created and S00 is not merged; tagging and merge are
+acceptance actions [AUTH: 01 §27].
 
 ## 7. Were any real scientific or model data inspected?
 
@@ -330,8 +340,11 @@ Every test runs on CPU with no network. Full statement:
 [x] A18 bundle carries all twenty 01 §26 fields
 [x] format / lint / typecheck / unit / integration PASS
 [x] scientific spec unchanged (I4 verifies all four documents)
-[ ] S00-B environment evidence PRESENT           <- U-01, blocks acceptance [plan §19]
-[ ] repo reproducible from the frozen scientific environment  <- follows U-01
+[x] S00-B image specification frozen: python 3.13, torch 2.13.0+cu130, digest-pinned
+[x] S00-B build and bootstrap workflow scripted, fail-closed, no Docker-in-Docker
+[ ] S00-B image BUILT, pushed and run on the H100    <- next action, off-pod build
+[ ] ENVIRONMENT_LOCK_SHA256 resolved                 <- blocks acceptance [plan §19]
+[ ] repo reproducible from the frozen scientific environment  <- follows the above
 ```
 
 Stage state:
