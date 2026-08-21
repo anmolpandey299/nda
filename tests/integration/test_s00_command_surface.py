@@ -32,6 +32,9 @@ from preflight import (
     write_readiness,
 )
 
+DIGEST_A = "sha256:" + "1" * 64
+DIGEST_B = "sha256:" + "2" * 64
+
 MAKE_TARGETS = (
     "format",
     "lint",
@@ -457,6 +460,17 @@ def test_s00b_bootstrap_never_reaches_capture_off_hardware(repo_root: Path) -> N
 
 
 # ------------------------------------------------- S00-B closure: runtime evidence lifecycle
+def _valid_env(repo: Path, **overrides: object) -> str:
+    """An environment manifest whose baked image identity is well formed and current."""
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    fields: dict[str, object] = {
+        "docker_image_digest": DIGEST_A,
+        "image_source_git_commit": head,
+    }
+    fields.update(overrides)
+    return write_environment_manifest(repo, **fields)
+
+
 def _prehardware_repo(tmp_path: Path) -> Path:
     """A repo in exactly the state S00-B starts from: committed bundle, no hardware yet."""
     repo = tmp_path / "r"
@@ -491,7 +505,7 @@ def test_closure_correct_hardware_run_does_not_invalidate_its_own_bundle(
     repo = _prehardware_repo(tmp_path)
     before = (repo / "artifacts/p0_pre/P0_PRE_READINESS.json").read_bytes()
 
-    identity = write_environment_manifest(repo)  # step 8, capture
+    identity = _valid_env(repo)  # step 8, capture
     write_readiness(repo, compute_readiness(repo))  # preflight step 8
 
     after = (repo / "artifacts/p0_pre/P0_PRE_READINESS.json").read_bytes()
@@ -503,7 +517,7 @@ def test_closure_correct_hardware_run_does_not_invalidate_its_own_bundle(
 
 def test_closure_source_drift_is_still_caught_after_a_hardware_run(tmp_path: Path) -> None:
     repo = _prehardware_repo(tmp_path)
-    write_environment_manifest(repo)
+    _valid_env(repo)
     write_readiness(repo, compute_readiness(repo))
     assert build_bundle.verify(repo, "S00") == []
 
@@ -516,7 +530,7 @@ def test_closure_forged_readiness_is_caught_by_rederivation(tmp_path: Path) -> N
     """Readiness keeps its fail-closed semantics: it is verified by re-derivation, which a
     hand-edited file cannot survive [AUTH: 02 §C6]."""
     repo = _prehardware_repo(tmp_path)
-    write_environment_manifest(repo)
+    _valid_env(repo)
     write_readiness(repo, compute_readiness(repo))
     assert build_bundle.verify(repo, "S00") == []
 
@@ -532,7 +546,7 @@ def test_closure_forged_readiness_is_caught_by_rederivation(tmp_path: Path) -> N
 
 def test_closure_tampered_environment_manifest_is_caught(tmp_path: Path) -> None:
     repo = _prehardware_repo(tmp_path)
-    identity = write_environment_manifest(repo)
+    identity = _valid_env(repo)
     write_readiness(repo, compute_readiness(repo))
     manifest = repo / "manifests" / "environments" / f"{identity}.json"
     obj = json.loads(manifest.read_text(encoding="utf-8"))
@@ -550,11 +564,11 @@ def test_closure_record_requires_the_full_chain(tmp_path: Path) -> None:
     assert incomplete["s00b_complete"] is False
     assert any("environment manifest" in p for p in build_bundle.closure_problems(incomplete))
 
-    write_environment_manifest(repo)
+    _valid_env(repo)
     write_readiness(repo, compute_readiness(repo))
     still_incomplete = build_bundle.closure_record(repo, "S00")
     assert still_incomplete["s00b_complete"] is False
-    assert any("gpu_smoke PASS" in p for p in build_bundle.closure_problems(still_incomplete))
+    assert any("no lane evidence" in p for p in build_bundle.closure_problems(still_incomplete))
 
 
 # ------------------------------------------------- S00-B ordering: verification vs the gate
@@ -569,7 +583,7 @@ def test_ordering_integration_must_not_require_final_readiness(tmp_path: Path) -
     repo = _prehardware_repo(tmp_path)
     assert build_bundle.verify(repo, "S00") == []
 
-    identity = write_environment_manifest(repo)  # step 8 of the bootstrap
+    identity = _valid_env(repo)  # step 8 of the bootstrap
     stored = json.loads(
         (repo / "artifacts/p0_pre/P0_PRE_READINESS.json").read_text(encoding="utf-8")
     )
@@ -695,10 +709,6 @@ def test_gpu_smoke_recipe_is_fail_closed(repo_root: Path) -> None:
 
 
 # ------------------------------------------------- S00-B reconciled: identity and closure
-DIGEST_A = "sha256:" + "1" * 64
-DIGEST_B = "sha256:" + "2" * 64
-
-
 def _lifecycle_repo(tmp_path: Path) -> tuple[Path, str, str]:
     """Candidate commit C, then bundle commit B describing C. B is the BUILD_COMMIT."""
     repo = tmp_path / "r"
@@ -803,7 +813,7 @@ def test_9_closure_without_current_gpu_evidence_fails(tmp_path: Path) -> None:
     write_readiness(repo, compute_readiness(repo))
     record = build_bundle.closure_record(repo, "S00")
     assert record["s00b_complete"] is False
-    assert any("gpu_smoke PASS" in p for p in build_bundle.closure_problems(record))
+    assert any("no lane evidence" in p for p in build_bundle.closure_problems(record))
 
 
 def test_9_gpu_pass_from_another_environment_cannot_authorise_closure(
@@ -835,9 +845,8 @@ def test_11_image_record_claiming_this_image_with_another_commit_is_tampered(
     assert record["s00b_complete"] is False
 
 
-def test_11_image_record_for_an_earlier_build_is_pending_commit(tmp_path: Path) -> None:
-    """The record cannot exist inside the commit that produced the image; that is expected,
-    not tampering, and must not create a rebuild loop."""
+def test_11_record_for_a_different_image_is_conflicting_not_pending(tmp_path: Path) -> None:
+    """PENDING_COMMIT is not a generic "the record differs" bucket."""
     repo, _candidate, build_commit = _lifecycle_repo(tmp_path)
     _run_hardware(repo, build_commit)
     (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
@@ -845,8 +854,73 @@ def test_11_image_record_for_an_earlier_build_is_pending_commit(tmp_path: Path) 
         encoding="utf-8",
     )
     record = build_bundle.closure_record(repo, "S00")
+    assert record["image_record_state"] == "CONFLICTING"
+    assert record["s00b_complete"] is False
+
+
+def test_2_absent_record_after_a_correct_build_is_pending_commit(tmp_path: Path) -> None:
+    """The narrow legitimate case: valid identity, correct build commit, record not yet
+    committed. It is closed by the closure commit, so there is no rebuild loop."""
+    repo, _candidate, build_commit = _lifecycle_repo(tmp_path)
+    _run_hardware(repo, build_commit)
+    assert not (repo / "manifests/environments/S00B_IMAGE_RECORD.json").exists()
+    record = build_bundle.closure_record(repo, "S00")
     assert record["image_record_state"] == "PENDING_COMMIT"
-    assert record["s00b_complete"] is True
+    assert record["s00b_complete"] is True, build_bundle.closure_problems(record)
+
+
+def test_1_consistent_record_is_accepted(tmp_path: Path) -> None:
+    repo, _candidate, build_commit = _lifecycle_repo(tmp_path)
+    _run_hardware(repo, build_commit)
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
+        json.dumps({"sealed_image_digest": DIGEST_A, "source_git_commit": build_commit}),
+        encoding="utf-8",
+    )
+    record = build_bundle.closure_record(repo, "S00")
+    assert record["image_record_state"] == "CONSISTENT"
+    assert record["s00b_complete"] is True, build_bundle.closure_problems(record)
+
+
+@pytest.mark.parametrize(
+    ("digest", "commit_kind"),
+    [("bad", "valid"), ("sha256:zz", "valid"), (DIGEST_A, "absent"), (DIGEST_A, "malformed")],
+)
+def test_4_5_malformed_image_record_fields_are_tampered(
+    tmp_path: Path, digest: str, commit_kind: str
+) -> None:
+    repo, _candidate, build_commit = _lifecycle_repo(tmp_path)
+    _run_hardware(repo, build_commit)
+    commit = {"valid": build_commit, "absent": "0" * 39 + "1", "malformed": "not-a-commit"}[
+        commit_kind
+    ]
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
+        json.dumps({"sealed_image_digest": digest, "source_git_commit": commit}),
+        encoding="utf-8",
+    )
+    record = build_bundle.closure_record(repo, "S00")
+    assert record["image_record_state"] == "TAMPERED"
+    assert record["s00b_complete"] is False
+
+
+@pytest.mark.parametrize("bad", ["bad", "sha256:zz", ""])
+def test_4_malformed_baked_digest_is_tampered(tmp_path: Path, bad: str) -> None:
+    repo, _candidate, build_commit = _lifecycle_repo(tmp_path)
+    identity = _run_hardware(repo, build_commit)
+    manifest = repo / "manifests" / "environments" / f"{identity}.json"
+    obj = json.loads(manifest.read_text(encoding="utf-8"))
+    obj["docker_image_digest"] = bad
+    state, _ = build_bundle.image_identity_state(repo, obj, build_commit)
+    assert state == "TAMPERED"
+
+
+def test_5_malformed_baked_source_commit_is_tampered(tmp_path: Path) -> None:
+    repo, _candidate, build_commit = _lifecycle_repo(tmp_path)
+    identity = _run_hardware(repo, build_commit)
+    manifest = repo / "manifests" / "environments" / f"{identity}.json"
+    obj = json.loads(manifest.read_text(encoding="utf-8"))
+    obj["image_source_git_commit"] = "not-a-commit"
+    state, _ = build_bundle.image_identity_state(repo, obj, build_commit)
+    assert state == "TAMPERED"
 
 
 def test_12_tampered_sealed_digest_fails_closure(tmp_path: Path) -> None:
@@ -858,7 +932,8 @@ def test_12_tampered_sealed_digest_fails_closure(tmp_path: Path) -> None:
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     record = build_bundle.closure_record(repo, "S00")
     assert record["s00b_complete"] is False
-    assert any("does not recompute" in p for p in build_bundle.closure_problems(record))
+    problems = build_bundle.closure_problems(record)
+    assert any("recomputed identity" in p or "identity" in p for p in problems), problems
 
 
 # ---------- 14, 15 — source and readiness integrity
@@ -917,3 +992,152 @@ def test_17_complete_simulated_lifecycle_succeeds(tmp_path: Path) -> None:
         "SUITE_SCOPE": "STATISTICAL_STACK_ONLY",
         "P0_PRE_READY": False,
     }
+
+
+# ------------------------------------------------- F3 / F4 hostile matrix
+def _write_closure(repo: Path) -> dict[str, object]:
+    record = build_bundle.closure_record(repo, "S00")
+    target = repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json"
+    target.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return record
+
+
+def _closed_repo(tmp_path: Path) -> tuple[Path, dict[str, object]]:
+    repo, _candidate, build_commit = _lifecycle_repo(tmp_path)
+    _run_hardware(repo, build_commit)
+    record = _write_closure(repo)
+    assert record["s00b_complete"] is True, build_bundle.closure_problems(record)
+    assert build_bundle.verify(repo, "S00") == []
+    return repo, record
+
+
+# ---------- F4: closure must not trust stored readiness
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("P0_PRE_READY", True),
+        ("BACKEND_INTEGRATED", True),
+        ("SUITE_SCOPE", "INTEGRATED_PRODUCTION_STACK"),
+        ("environment_lock_sha256", "e" * 64),
+    ],
+)
+def test_f4_forged_readiness_fields_block_closure(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    """Codex forged readiness with computed_by preserved and closure still reported
+    complete. Closure now re-derives readiness itself and refuses to trust the file."""
+    repo, _candidate, build_commit = _lifecycle_repo(tmp_path)
+    _run_hardware(repo, build_commit)
+    path = repo / "artifacts/p0_pre/P0_PRE_READINESS.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged[field] = value
+    assert forged["computed_by"] == "PREFLIGHT_STEP_8", "the literal producer is preserved"
+    path.write_text(json.dumps(forged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    record = build_bundle.closure_record(repo, "S00")
+    assert record["s00b_complete"] is False
+    assert any("re-derivation" in p for p in build_bundle.closure_problems(record)), (
+        build_bundle.closure_problems(record)
+    )
+
+
+def test_f4_closure_fields_come_from_the_rederivation(tmp_path: Path) -> None:
+    """Even if a forged file existed, the recorded readiness is the re-derived one."""
+    repo, record = _closed_repo(tmp_path)
+    assert record["readiness"] == {
+        "BACKEND_INTEGRATED": False,
+        "SUITE_SCOPE": "STATISTICAL_STACK_ONLY",
+        "P0_PRE_READY": False,
+    }
+    recomputed = compute_readiness(repo)
+    assert record["environment_lock_sha256"] == recomputed["environment_lock_sha256"]
+
+
+def test_f4_valid_s00_readiness_permits_closure_with_p0_still_false(
+    tmp_path: Path,
+) -> None:
+    _repo, record = _closed_repo(tmp_path)
+    assert record["s00b_complete"] is True
+    readiness = record["readiness"]
+    assert isinstance(readiness, dict)
+    assert readiness["P0_PRE_READY"] is False
+
+
+# ---------- F3: closure hashes are re-verified afterwards
+@pytest.mark.parametrize(
+    "target",
+    [
+        "artifacts/p0_pre/evidence/lanes/gpu_smoke.json",
+        "artifacts/p0_pre/P0_PRE_READINESS.json",
+    ],
+)
+def test_f3_altering_a_closure_artifact_fails_verification(tmp_path: Path, target: str) -> None:
+    repo, _record = _closed_repo(tmp_path)
+    path = repo / target
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if "gpu_smoke" in target:
+        observed = payload["observed"]
+        observed["detail"] = "tampered note"
+    else:
+        payload["SUITE_SCOPE"] = "INTEGRATED_PRODUCTION_STACK"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    problems = build_bundle.verify(repo, "S00")
+    assert any("changed after closure" in p for p in problems), problems
+
+
+def test_f3_altering_the_environment_manifest_fails_verification(tmp_path: Path) -> None:
+    repo, record = _closed_repo(tmp_path)
+    name = record["environment_manifests"]
+    assert isinstance(name, list)
+    path = repo / "manifests" / "environments" / str(name[0])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["cuda_driver"] = "999.99"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    problems = build_bundle.verify(repo, "S00")
+    assert problems, "a tampered environment manifest passed verification"
+
+
+def test_f3_closure_record_binds_gpu_and_readiness(tmp_path: Path) -> None:
+    _repo, record = _closed_repo(tmp_path)
+    produced = record["produced_artifact_sha256"]
+    assert isinstance(produced, dict)
+    assert "artifacts/p0_pre/evidence/lanes/gpu_smoke.json" in produced
+    assert "artifacts/p0_pre/P0_PRE_READINESS.json" in produced
+
+
+def test_f3_a_closure_record_missing_the_gpu_binding_is_rejected(tmp_path: Path) -> None:
+    repo, _record = _closed_repo(tmp_path)
+    path = repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    produced = payload["produced_artifact_sha256"]
+    del produced["artifacts/p0_pre/evidence/lanes/gpu_smoke.json"]
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    problems = build_bundle.verify(repo, "S00")
+    assert any("does not bind the GPU lane evidence" in p for p in problems), problems
+
+
+def test_f3_verification_does_not_silently_regenerate_the_closure_record(
+    tmp_path: Path,
+) -> None:
+    repo, _record = _closed_repo(tmp_path)
+    path = repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json"
+    before = path.read_bytes()
+    build_bundle.verify(repo, "S00")
+    assert path.read_bytes() == before, "verify must detect stale closure evidence, not fix it"
+
+
+# ---------- Claude F-02: standalone runtime verification catches image tampering
+def test_f02_image_source_commit_tampering_fails_runtime_verification(
+    tmp_path: Path,
+) -> None:
+    repo, _candidate, build_commit = _lifecycle_repo(tmp_path)
+    identity = _run_hardware(repo, build_commit)
+    assert build_bundle.verify_runtime(repo, "S00") == []
+
+    manifest = repo / "manifests" / "environments" / f"{identity}.json"
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["image_source_git_commit"] = "0" * 39 + "1"
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+    problems = build_bundle.verify_runtime(repo, "S00")
+    assert problems, "standalone runtime verification missed image identity tampering"

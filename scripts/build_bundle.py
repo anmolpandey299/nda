@@ -30,9 +30,9 @@ from preflight import (  # noqa: E402
     READINESS_REL,
     TBD,
     compute_readiness,
-    current_lane_pass,
     environment_lock_sha256,
     is_environment_lock_manifest,
+    validate_lane_evidence,
 )
 
 IMAGE_RECORD_REL = "manifests/environments/S00B_IMAGE_RECORD.json"
@@ -357,8 +357,82 @@ def verify_source(root: Path, stage: str) -> list[str]:
     return problems
 
 
-def verify_runtime(root: Path, stage: str) -> list[str]:
-    """The RUNTIME half: readiness must equal its re-derivation for the current environment.
+CLOSURE_REL_TEMPLATE = "stage_acceptance/{stage}/12_S00B_CLOSURE.json"
+
+
+def _selected_environment(root: Path) -> tuple[Path | None, dict[str, object]]:
+    env_dir = root / "manifests" / "environments"
+    manifests = (
+        [p for p in sorted(env_dir.glob("*.json")) if is_environment_lock_manifest(p)]
+        if env_dir.is_dir()
+        else []
+    )
+    if not manifests:
+        return None, {}
+    return manifests[0], json.loads(manifests[0].read_text(encoding="utf-8"))
+
+
+def verify_closure_record(root: Path, stage: str) -> list[str]:
+    """Re-verify a closure record that already exists. Never regenerate it here.
+
+    A closure record is a claim about artifacts. Tampering with any artifact it hashed - the
+    GPU note, readiness, the environment manifest - must make verification fail, otherwise
+    closure evidence decays silently [AUTH: 01 §16, §26(13)].
+    """
+    path = root / CLOSURE_REL_TEMPLATE.format(stage=stage)
+    if not path.is_file():
+        return []
+    problems: list[str] = []
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"12_S00B_CLOSURE.json is not valid JSON ({exc.msg})"]
+    if not isinstance(record, dict):
+        return ["12_S00B_CLOSURE.json is not a JSON object"]
+
+    produced = record.get("produced_artifact_sha256")
+    if not isinstance(produced, dict) or not produced:
+        problems.append("closure record hashes no produced artifacts")
+    else:
+        for rel, digest in sorted(produced.items()):
+            target = root / str(rel)
+            if not target.is_file():
+                problems.append(f"closure artifact is missing: {rel}")
+            elif sha256_file(target) != digest:
+                problems.append(f"closure artifact changed after closure: {rel}")
+        gpu_rel = f"{EVIDENCE_LANES_REL}/{GPU_LANE}.json"
+        if gpu_rel not in produced:
+            problems.append("closure record does not bind the GPU lane evidence it consumed")
+        readiness_rel = READINESS_REL
+        if readiness_rel not in produced:
+            problems.append("closure record does not bind the readiness artifact")
+
+    _, env_manifest = _selected_environment(root)
+    identity = environment_lock_sha256(env_manifest) if env_manifest else TBD
+    if record.get("environment_lock_sha256") != identity:
+        problems.append(
+            "closure record's environment identity is no longer the selected environment"
+        )
+    build_commit = git(root, "rev-parse", "HEAD").strip()
+    if record.get("build_commit") not in {build_commit, ""} and record.get("s00b_complete"):
+        problems.append(
+            f"closure record was made at build commit {str(record.get('build_commit'))[:12]},"
+            f" not {build_commit[:12]}"
+        )
+    if env_manifest:
+        if record.get("sealed_image_digest") != env_manifest.get("docker_image_digest"):
+            problems.append("closure record's sealed image digest is no longer current")
+        if record.get("image_source_git_commit") != env_manifest.get("image_source_git_commit"):
+            problems.append("closure record's image source commit is no longer current")
+    if record.get("s00b_complete"):
+        _, gpu_problems = validate_lane_evidence(root, GPU_LANE)
+        problems.extend(f"closure: {p}" for p in gpu_problems)
+    return problems
+
+
+def verify_runtime(root: Path, stage: str, *, check_closure: bool = True) -> list[str]:
+    """The RUNTIME half: readiness re-derivation, environment identity, image identity,
+    lane evidence and any existing closure record.
 
     Only meaningful once readiness has been written for the runtime evidence in play, i.e.
     after preflight step 8. Running it earlier is a circular ordering dependency.
@@ -370,7 +444,25 @@ def verify_runtime(root: Path, stage: str) -> list[str]:
     runtime = manifest.get("runtime_evidence")
     if not isinstance(runtime, dict):
         return ["05_ARTIFACT_MANIFEST.json has no runtime_evidence section"]
-    return _verify_runtime_evidence(root, runtime)
+    problems = _verify_runtime_evidence(root, runtime)
+
+    # Lane evidence is validated whenever it exists; REQUIRING it is closure's job.
+    if (root / EVIDENCE_LANES_REL / f"{GPU_LANE}.json").is_file():
+        problems.extend(validate_lane_evidence(root, GPU_LANE)[1])
+
+    # Image identity is checked here too, so tampering is caught by standalone verification
+    # rather than only at closure.
+    _, env_manifest = _selected_environment(root)
+    if env_manifest:
+        build_commit = git(root, "rev-parse", "HEAD").strip()
+        state, image_problems = image_identity_state(root, env_manifest, build_commit)
+        if state not in ACCEPTED_IMAGE_STATES:
+            problems.extend(image_problems)
+            problems.append(f"image identity state is {state}")
+
+    if check_closure:
+        problems.extend(verify_closure_record(root, stage))
+    return problems
 
 
 def verify(root: Path, stage: str) -> list[str]:
@@ -385,56 +477,95 @@ def verify(root: Path, stage: str) -> list[str]:
     return problems + verify_runtime(root, stage)
 
 
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+#: States in which S00-B may complete. Everything else fails closed.
+ACCEPTED_IMAGE_STATES = frozenset({"CONSISTENT", "PENDING_COMMIT"})
+
+
+def _is_commit(root: Path, sha: object) -> bool:
+    if not isinstance(sha, str) or not FULL_SHA_RE.match(sha):
+        return False
+    result = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "-e", f"{sha}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def image_identity_state(
     root: Path, env_manifest: dict[str, object], build_commit: str
 ) -> tuple[str, list[str]]:
-    """Bind the sealed image to the commit it was built from, without an impossible cycle.
+    """Bind the sealed image to the commit it was built from, fail-closed.
 
-    `S00B_IMAGE_RECORD.json` is written by the build, so it cannot already exist inside the
-    commit that produced the image. Requiring it to would be an infinite
-    build -> edit record -> commit -> rebuild loop. The authoritative identity is therefore
-    the one baked into /etc/pmm-image.json, which capture copied into the environment
-    manifest from inside the image and which no caller can supply.
+    `S00B_IMAGE_RECORD.json` is written BY the build, so it cannot exist inside the commit
+    that produced the image; requiring it to would be an endless build/edit/commit/rebuild
+    loop. The authoritative identity is the one baked into /etc/pmm-image.json, which capture
+    copied into the environment manifest from inside the image.
 
     States:
-      CONSISTENT       the committed record describes exactly this image
-      PENDING_COMMIT   no record yet for this image; expected on the pod, closed by the
-                       closure commit
+      CONSISTENT       a committed record describes exactly this image
+      PENDING_COMMIT   the NARROW legitimate case: the baked identity is valid and from the
+                       correct build commit, and no repository-side record exists yet. It is
+                       committed with the closure evidence, which is why there is no loop.
       PENDING_REBUILD  the image was built from a different commit than the one being closed
-      TAMPERED         the record claims THIS image but disagrees about its source commit,
-                       or the baked digest is malformed
+      CONFLICTING      a record already exists and describes a DIFFERENT image
+      TAMPERED         malformed or contradictory identity anywhere
     """
     problems: list[str] = []
     digest = env_manifest.get("docker_image_digest")
     source_commit = env_manifest.get("image_source_git_commit")
 
-    if not isinstance(digest, str) or not digest.startswith("sha256:") or len(digest) != 71:
+    if not isinstance(digest, str) or not DIGEST_RE.match(digest):
         problems.append(f"baked image digest is malformed: {digest!r}")
         return "TAMPERED", problems
-    if not isinstance(source_commit, str) or not FULL_SHA_RE.match(source_commit):
-        problems.append(f"baked image source commit is malformed: {source_commit!r}")
+    if not _is_commit(root, source_commit):
+        problems.append(
+            f"baked image source commit is malformed or is not a commit: {source_commit!r}"
+        )
         return "TAMPERED", problems
     if source_commit != build_commit:
         problems.append(
-            f"the image was built from {source_commit[:12]} but closure is for "
+            f"the image was built from {str(source_commit)[:12]} but closure is for "
             f"{build_commit[:12]}; rebuild from the build commit"
         )
         return "PENDING_REBUILD", problems
 
     record_path = root / IMAGE_RECORD_REL
     if not record_path.is_file():
+        # The only legitimate pending state: this image exists, its identity is valid and
+        # matches the build commit, and the post-build record is not committed yet.
         return "PENDING_COMMIT", problems
     try:
         record = json.loads(record_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         problems.append(f"{IMAGE_RECORD_REL} is not valid JSON ({exc.msg})")
         return "TAMPERED", problems
-    if record.get("sealed_image_digest") != digest:
-        return "PENDING_COMMIT", problems
-    if record.get("source_git_commit") != source_commit:
+    if not isinstance(record, dict):
+        problems.append(f"{IMAGE_RECORD_REL} is not a JSON object")
+        return "TAMPERED", problems
+
+    record_digest = record.get("sealed_image_digest")
+    record_commit = record.get("source_git_commit")
+    if not isinstance(record_digest, str) or not DIGEST_RE.match(record_digest):
+        problems.append(f"{IMAGE_RECORD_REL} digest is malformed: {record_digest!r}")
+        return "TAMPERED", problems
+    if not _is_commit(root, record_commit):
+        problems.append(
+            f"{IMAGE_RECORD_REL} source commit is malformed or is not a commit: {record_commit!r}"
+        )
+        return "TAMPERED", problems
+    if record_digest != digest:
+        problems.append(
+            f"{IMAGE_RECORD_REL} describes {record_digest[:19]} but the running image is "
+            f"{digest[:19]}; update the record, it is not a pending one"
+        )
+        return "CONFLICTING", problems
+    if record_commit != source_commit:
         problems.append(
             f"{IMAGE_RECORD_REL} claims this image but a different source commit: "
-            f"{record.get('source_git_commit')!r} != {source_commit!r}"
+            f"{record_commit!r} != {source_commit!r}"
         )
         return "TAMPERED", problems
     return "CONSISTENT", problems
@@ -447,11 +578,11 @@ def closure_problems(record: dict[str, object]) -> list[str]:
 
 
 def closure_record(root: Path, stage: str) -> dict[str, object]:
-    """Evidence produced by an actual S00-B hardware run, bound end to end.
+    """Evidence produced by an actual S00-B hardware run, built from VERIFIED values.
 
-    Closure requires the whole chain to agree: the scientific commit the bundle describes,
-    the build commit the image was made from and the repository is at, the identity baked
-    into the image, the environment manifest, a current-environment GPU PASS, and readiness
+    Closure does not assume the caller ran `make bundle-verify` first: it reuses the same
+    source and runtime verifiers, re-derives readiness authoritatively, and constructs every
+    field from the verified or re-derived value rather than copying mutable stored JSON
     [AUTH: 01 §16, §26(13); 02 §C6; plan §19].
     """
     problems: list[str] = []
@@ -478,56 +609,50 @@ def closure_record(root: Path, stage: str) -> dict[str, object]:
             )
 
     problems.extend(verify_source(root, stage))
+    problems.extend(verify_runtime(root, stage, check_closure=False))
 
-    env_dir = root / "manifests" / "environments"
-    manifests = (
-        [p for p in sorted(env_dir.glob("*.json")) if is_environment_lock_manifest(p)]
-        if env_dir.is_dir()
-        else []
-    )
-    env_manifest: dict[str, object] = {}
-    if not manifests:
+    manifest_path, env_manifest = _selected_environment(root)
+    if manifest_path is None:
         problems.append("no environment manifest; run `make env-capture` on the H100")
-    else:
-        env_manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
-        if environment_lock_sha256(env_manifest) != env_manifest.get("environment_lock_sha256"):
-            problems.append(f"{manifests[0].name}: identity does not recompute")
 
     image_state, image_problems = (
         image_identity_state(root, env_manifest, build_commit)
         if env_manifest
         else ("PENDING_REBUILD", ["no environment manifest to bind the image to"])
     )
-    problems.extend(image_problems)
+    if image_state not in ACCEPTED_IMAGE_STATES:
+        problems.extend(image_problems)
 
-    gpu_record = current_lane_pass(root, GPU_LANE)
-    if gpu_record is None:
-        problems.append(
-            "no current-environment gpu_smoke PASS; S00-B closure requires the hardware lane"
-            " to have passed against THIS environment"
-        )
+    gpu_record, gpu_problems = validate_lane_evidence(root, GPU_LANE)
+    problems.extend(gpu_problems)
 
+    # Authoritative readiness: re-derived here, then compared with what is on disk.
+    recomputed = compute_readiness(root, computed_by=READINESS_PRODUCER)
     readiness_path = root / READINESS_REL
-    readiness = (
+    stored = (
         json.loads(readiness_path.read_text(encoding="utf-8")) if readiness_path.is_file() else {}
     )
-    if readiness.get("computed_by") != READINESS_PRODUCER:
-        problems.append(f"readiness was not authored by {READINESS_PRODUCER}")
-    identity = readiness.get("environment_lock_sha256", TBD)
+    if stored != recomputed:
+        problems.append(
+            "stored readiness does not equal its authoritative re-derivation; closure will"
+            " not trust it"
+        )
+    identity = str(recomputed["environment_lock_sha256"])
+    if identity == TBD:
+        problems.append("the environment identity has not resolved")
 
     gpu_evidence_path = root / EVIDENCE_LANES_REL / f"{GPU_LANE}.json"
-    produced_paths = [*manifests, readiness_path, gpu_evidence_path]
+    produced_paths = [
+        *([manifest_path] if manifest_path else []),
+        readiness_path,
+        gpu_evidence_path,
+    ]
     produced = {
         p.relative_to(root).as_posix(): sha256_file(p) for p in produced_paths if p.is_file()
     }
 
-    complete = bool(
-        not problems
-        and identity != TBD
-        and manifests
-        and gpu_record is not None
-        and image_state in {"CONSISTENT", "PENDING_COMMIT"}
-    )
+    complete = bool(not problems and gpu_record is not None and identity != TBD)
+    observed = gpu_record["observed"] if gpu_record else {"outcome": "ABSENT"}
     return {
         "stage": stage,
         "authority": "01 §16, §26(13); 02 §C6; plan §19",
@@ -537,18 +662,20 @@ def closure_record(root: Path, stage: str) -> dict[str, object]:
         "sealed_image_digest": env_manifest.get("docker_image_digest", TBD),
         "image_record_state": image_state,
         "environment_lock_sha256": identity,
-        "environment_manifests": [p.name for p in manifests],
-        "gpu_smoke": (gpu_record or {}).get("observed", {"outcome": "ABSENT"}),
+        "environment_manifests": [manifest_path.name] if manifest_path else [],
+        "gpu_smoke": observed,
         "readiness": {
-            key: readiness.get(key) for key in ("BACKEND_INTEGRATED", "SUITE_SCOPE", "P0_PRE_READY")
+            key: recomputed.get(key)
+            for key in ("BACKEND_INTEGRATED", "SUITE_SCOPE", "P0_PRE_READY")
         },
         "produced_artifact_sha256": produced,
         "problems": problems,
         "s00b_complete": complete,
         "note": (
-            "Runtime evidence from one hardware run. P0 evidence eligibility is a separate "
-            "and stricter question: the GPU lane may be a genuine S00-B PASS while readiness "
-            "still classifies it NON_EVIDENTIARY because no S01 RUN_ID exists."
+            "Runtime evidence from one hardware run, built from re-derived values. P0 "
+            "evidence eligibility is a separate and stricter question: the GPU lane may be a "
+            "genuine S00-B PASS while readiness still classifies it NON_EVIDENTIARY because "
+            "no S01 RUN_ID exists."
         ),
     }
 

@@ -330,6 +330,9 @@ def _load_namespace(base: Path, keys: tuple[str, ...]) -> dict[str, object]:
 #: The producer whose output readiness re-derivation is allowed to trust [AUTH: 02 §C6].
 READINESS_PRODUCER = "PREFLIGHT_STEP_8"
 
+#: Publication marker for the lane evidence schema.
+LANE_EVIDENCE_SCHEMA = "s00b.lane-evidence.v1"
+
 
 def expected_lane_test_count(root: Path, lane: str) -> int:
     """How many test functions the lane defines. A partially collected suite is not a lane."""
@@ -422,11 +425,15 @@ def record_lane_evidence(
         "status": "PASS",
         "lane": key,
         "environment_lock_sha256": identity,
+        "schema": LANE_EVIDENCE_SCHEMA,
         "observed": {
             "outcome": "PASS",
             "recorded_utc": stamp,
             "detail": detail.strip() or f"{counts['tests']} passed, 0 skipped",
             "tests": counts["tests"],
+            "passed": counts["tests"] - counts["skipped"] - counts["failures"] - counts["errors"],
+            "failures": counts["failures"],
+            "errors": counts["errors"],
             "skipped": counts["skipped"],
             "expected_tests": expected,
         },
@@ -450,24 +457,90 @@ def record_lane_evidence(
     return target
 
 
-def current_lane_pass(root: Path, key: str) -> dict[str, object] | None:
-    """The lane's PASS record for the CURRENT environment, or None."""
-    path = root / EVIDENCE_LANES_REL / f"{key}.json"
-    if not path.is_file():
-        return None
-    try:
-        record = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
+#: Fields the publication schema writes, and therefore the fields consumption must require.
+LANE_OBSERVED_INT_FIELDS: tuple[str, ...] = (
+    "tests",
+    "passed",
+    "failures",
+    "errors",
+    "skipped",
+    "expected_tests",
+)
+
+
+def validate_lane_evidence(
+    root: Path, key: str, *, record: object | None = None
+) -> tuple[dict[str, object] | None, list[str]]:
+    """THE canonical lane-evidence validator. One predicate, three consumers.
+
+    Readiness derivation, runtime bundle verification and closure eligibility all call this,
+    so a record cannot satisfy one and fail another. A truncated record carrying only an
+    environment id and `observed.outcome = PASS` is rejected: consumption validates every
+    field the publication schema writes [AUTH: 02 §C6; 01 §16, §21].
+    """
+    problems: list[str] = []
+    if record is None:
+        path = root / EVIDENCE_LANES_REL / f"{key}.json"
+        if not path.is_file():
+            return None, [f"{key}: no lane evidence recorded"]
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            return None, [f"{key}: evidence is not valid JSON ({exc.msg})"]
     if not isinstance(record, dict):
-        return None
-    observed = record.get("observed")
-    if not isinstance(observed, dict) or observed.get("outcome") != "PASS":
-        return None
+        return None, [f"{key}: evidence is not a JSON object"]
+
+    if record.get("schema") != LANE_EVIDENCE_SCHEMA:
+        problems.append(
+            f"{key}: schema marker is {record.get('schema')!r}, expected {LANE_EVIDENCE_SCHEMA!r}"
+        )
+    if record.get("status") != "PASS":
+        problems.append(f"{key}: status is {record.get('status')!r}, expected 'PASS'")
+    if record.get("lane") != key:
+        problems.append(f"{key}: record declares lane {record.get('lane')!r}")
+
     identity = current_environment_lock(root)
-    if identity == TBD or record.get("environment_lock_sha256") != identity:
-        return None
-    return record
+    if identity == TBD:
+        problems.append(f"{key}: no current environment identity to bind the evidence to")
+    elif record.get("environment_lock_sha256") != identity:
+        problems.append(
+            f"{key}: evidence is bound to {str(record.get('environment_lock_sha256'))[:12]},"
+            f" not to the current environment {identity[:12]}"
+        )
+
+    observed = record.get("observed")
+    if not isinstance(observed, dict):
+        problems.append(f"{key}: evidence carries no observed block")
+        return None, problems
+    if observed.get("outcome") != "PASS":
+        problems.append(f"{key}: observed outcome is {observed.get('outcome')!r}")
+    for name in LANE_OBSERVED_INT_FIELDS:
+        value = observed.get(name)
+        if not isinstance(value, int) or isinstance(value, bool):
+            problems.append(f"{key}: observed.{name} is missing or not an integer")
+    if not isinstance(observed.get("recorded_utc"), str):
+        problems.append(f"{key}: observed.recorded_utc is missing")
+    if problems:
+        return None, problems
+
+    tests = int(observed["tests"])
+    expected = int(observed["expected_tests"])
+    if tests <= 0 or tests < expected:
+        problems.append(f"{key}: collected {tests} of {expected} required tests")
+    for name in ("failures", "errors", "skipped"):
+        if int(observed[name]) != 0:
+            problems.append(f"{key}: observed.{name} = {observed[name]}, expected 0")
+    if int(observed["passed"]) != tests:
+        problems.append(
+            f"{key}: observed.passed {observed['passed']} does not account for all"
+            f" {tests} collected tests"
+        )
+    return (None, problems) if problems else (record, [])
+
+
+def current_lane_pass(root: Path, key: str) -> dict[str, object] | None:
+    """Thin wrapper so no consumer can accidentally use a weaker predicate."""
+    return validate_lane_evidence(root, key)[0]
 
 
 def load_lane_evidence(root: Path) -> dict[str, object]:
@@ -512,9 +585,9 @@ def compute_readiness(root: Path, computed_by: str = "PREFLIGHT_STEP_8") -> dict
         if verdict.reason:
             entry["reason"] = verdict.reason
         # A lane that ran must say so, even when its record is not yet accepted as evidence.
-        raw = lane_records.get(key)
-        if isinstance(raw, dict) and isinstance(raw.get("observed"), dict):
-            entry["observed"] = raw["observed"]
+        validated, _ = validate_lane_evidence(root, key, record=lane_records.get(key))
+        if validated is not None:
+            entry["observed"] = validated["observed"]
         evidence[key] = entry
 
     software_gate: dict[str, object] = {}

@@ -563,6 +563,62 @@ verification. Readiness re-derivation requires the literal producer `PREFLIGHT_S
 than trusting the stored value. The closure record hashes the GPU lane evidence it consumed.
 
 
+## 3I. Final fix round — reconciled Codex/Claude findings
+
+Starting point, obtained with `git rev-parse`:
+
+```text
+science described commit  78fdf0468a3d5fb60306efb84fa75704311e0662
+bundle / build commit     bc5da88675c0e5f70fb5fee8d94ed83c8385f83a
+```
+
+### F1 (BLOCKER) — GPU record consumption was not schema-validated
+
+`current_lane_pass` checked only `observed.outcome` and the environment id, so Codex's
+truncated record was consumed as a PASS. There is now ONE canonical validator,
+`validate_lane_evidence`, and readiness derivation, runtime bundle verification and closure
+eligibility all call it; `current_lane_pass` is a thin wrapper so no consumer can hold a
+weaker predicate. It requires the schema marker, `status == PASS`, the declared lane, the
+current environment identity, `observed.outcome == PASS`, and the integer counts the
+publication schema writes: tests, passed, failures, errors, skipped, expected_tests. Failures
+and errors are now published so they can be validated rather than assumed, and `passed` must
+account for every collected test.
+
+### F2 (BLOCKER) — PENDING_COMMIT was a catch-all
+
+Every field is now validated independently first: digest syntax, source-commit syntax **and
+existence as a commit**, and record structure. The states are `CONSISTENT`, `PENDING_COMMIT`,
+`PENDING_REBUILD`, `CONFLICTING` and `TAMPERED`, and only the first two permit completion.
+`PENDING_COMMIT` is now the narrow case only: valid baked identity, correct build commit, and
+**no repository-side record at all**. An existing record describing a different image is
+`CONFLICTING`, not pending. The stale `S00B_IMAGE_RECORD.json` describing an image built from
+an obsolete commit has been untracked accordingly: it is post-build evidence and belongs in
+the closure commit, which is what keeps the lifecycle free of a rebuild loop.
+
+### F3 (MAJOR) — closure hashes were never re-checked
+
+`verify_closure_record` now re-verifies an existing closure record: every produced-artifact
+path exists and still hashes to the recorded value, the GPU evidence and readiness bindings
+are present, and the recorded environment identity, image digest, image source commit and
+build commit are still current. It never regenerates the record, so stale or tampered closure
+evidence is detected rather than silently repaired.
+
+### F4 (MAJOR) — closure trusted readiness
+
+Closure now reuses `verify_source` and `verify_runtime` rather than implementing a parallel
+verifier, re-derives readiness authoritatively, refuses to proceed when the stored file
+differs, and builds its own fields — readiness flags, environment identity, GPU observation —
+from the re-derived and validated values instead of copying mutable JSON.
+
+### F5 (MAJOR) and Claude F-01/F-02
+
+The runbook now defines `SCIENCE_DESCRIBED_COMMIT` and `FINAL_BUNDLE_BUILD_COMMIT`, and every
+executable step takes `<bundle-build-commit>`; the ambiguous `<candidate-commit>` placeholder
+is gone and a test fails if it returns. The closure commit instructions list every artifact
+closure consumed, so a fresh clone can re-verify the hashes. Image-identity tampering is now
+caught by standalone runtime verification, not only at closure.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.

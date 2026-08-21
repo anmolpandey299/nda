@@ -50,7 +50,7 @@ Docker is unavailable inside a RunPod pod, so the image is built locally or in C
 below requires Docker-in-Docker.
 
 ```bash
-git checkout <candidate-commit>
+git checkout <bundle-build-commit>
 docker buildx version          # required; a plain `docker build` on Apple Silicon
                                # produces linux/arm64 and RunPod rejects it with
                                # "no matching manifest for linux/amd64"
@@ -82,8 +82,8 @@ The tag moves; the digest does not [AUTH: 01 §12(9)].
 
 ```bash
 git clone <repo> /repo && cd /repo
-git checkout <candidate-commit>
-bash scripts/bootstrap_runpod_s00b.sh <candidate-commit>
+git checkout <bundle-build-commit>
+bash scripts/bootstrap_runpod_s00b.sh <bundle-build-commit>
 ```
 
 That single command fails closed on any mismatch and, in order, verifies the exact commit, a
@@ -94,11 +94,22 @@ capability (9, 0), and the sealed image metadata; then runs `make env-capture`,
 ### Commit vocabulary — three different commits
 
 ```text
-DESCRIBED_COMMIT           the scientific candidate the acceptance bundle describes
-BUILD_COMMIT               the bundle commit. It CONTAINS the bundle, so the image is built
-                           from it; building from DESCRIBED_COMMIT would ship no bundle
-IMAGE_SOURCE_GIT_COMMIT    baked into /etc/pmm-image.json at build time == BUILD_COMMIT
-BOOTSTRAP_REQUIRED_COMMIT  == BUILD_COMMIT, the argument to bootstrap_runpod_s00b.sh
+SCIENCE_DESCRIBED_COMMIT    the scientific candidate the acceptance bundle describes.
+                            It is NEVER built from and NEVER bootstrapped.
+
+FINAL_BUNDLE_BUILD_COMMIT   the commit CONTAINING the acceptance bundle. Everything
+                            executable uses this one:
+                              = the commit the sealed science image is built from
+                              = the baked /etc/pmm-image.json source_git_commit
+                              = the bootstrap REQUIRED_COMMIT
+
+In every command below, <bundle-build-commit> means FINAL_BUNDLE_BUILD_COMMIT. There is no
+executable step that takes the science candidate.
+
+    SCIENCE_DESCRIBED_COMMIT
+        -> FINAL_BUNDLE_BUILD_COMMIT            (the commit that contains its bundle)
+        -> build sealed image FROM FINAL_BUNDLE_BUILD_COMMIT
+        -> bootstrap REQUIRED_COMMIT = FINAL_BUNDLE_BUILD_COMMIT
 ```
 
 Never bootstrap the scientific candidate; that commit predates its own bundle.
@@ -177,12 +188,25 @@ The bootstrap ends with two verification steps that are deliberately different i
 Then bring the runtime evidence back and make it the described state:
 
 ```bash
+# Every artifact closure consumed and hashed. A fresh clone must contain all of it, or
+# `make bundle-verify` cannot re-check the closure hashes.
 git add manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json \
+        manifests/environments/S00B_IMAGE_RECORD.json \
         artifacts/p0_pre/P0_PRE_READINESS.json \
+        artifacts/p0_pre/evidence/lanes/gpu_smoke.json \
         stage_acceptance/S00/12_S00B_CLOSURE.json
 git commit -m "S00-B: hardware closure evidence"
 make bundle && make bundle-verify
 ```
+
+`S00B_IMAGE_RECORD.json` is written by `build_science_image.sh` on the build host and belongs
+in THIS commit, not in the build commit: it describes an image that does not exist until the
+build commit has been built. That is why its pre-commit state is `PENDING_COMMIT` and why
+there is no build/edit/commit/rebuild loop.
+
+After this commit `make bundle-verify` re-checks every hash the closure record bound, so
+altering the GPU evidence, the readiness file or the environment manifest afterwards makes
+verification fail.
 
 S00-B is closed when `ENVIRONMENT_LOCK_SHA256` is resolved and the closure record exists.
 
