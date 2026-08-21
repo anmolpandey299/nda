@@ -29,6 +29,36 @@ cpu-dev = [
   "matplotlib",
 ]
 
+# S00-B science set, frozen 21 August 2026 [AUTH: 01 §12; plan §5.2, §5.3].
+#
+# Selection, against the observed RunPod H100 probe (driver 580.126.09, host CUDA 13.0,
+# compute capability 9.0) and the already-frozen `requires-python = ">=3.13,<3.14"`:
+#   * torch 2.13.0 is the current production release with a CPython 3.13 manylinux x86_64
+#     wheel; the stock pod's preinstalled 2.4.1+cu124 is NOT reused merely because it was
+#     there, and it has no cp313 build at all.
+#   * the +cu130 build matches the driver's CUDA 13.0 exactly, so no minor-version
+#     compatibility fallback is relied upon.
+#   * the CUDA runtime itself is locked: torch pulls 15 pinned nvidia-* wheels, so the image
+#     needs no NVIDIA base image and the runtime is hash-pinned like everything else.
+#
+# Linux/x86_64 markers keep the CPU/dev lane resolvable off-Linux; these wheels have no
+# macOS or Windows build.
+science = [
+  "torch==2.13.0 ; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "transformers ; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "peft ; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "accelerate ; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "opacus ; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

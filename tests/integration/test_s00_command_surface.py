@@ -397,3 +397,35 @@ def test_fix9_review_worktree_is_pinned_and_read_only(repo_root: Path, tmp_path:
     finally:
         _run(["bash", "scripts/make_review_worktree.sh", "--remove", str(dest)], repo_root)
     assert not dest.exists()
+
+
+# ------------------------------------------------------------------ S00-B bootstrap
+def test_s00b_bootstrap_fails_closed_on_a_wrong_commit(repo_root: Path) -> None:
+    """The first gate is the exact required commit; everything after it must not run."""
+    res = _run(["bash", "scripts/bootstrap_runpod_s00b.sh", "0" * 40], repo_root)
+    combined = res.stdout + res.stderr
+    assert res.returncode != 0
+    assert "S00B_BOOTSTRAP = FAIL" in combined
+    assert "!= required" in combined
+    assert "S00B_BOOTSTRAP = PASS" not in combined
+
+
+def test_s00b_bootstrap_requires_an_argument(repo_root: Path) -> None:
+    res = _run(["bash", "scripts/bootstrap_runpod_s00b.sh"], repo_root)
+    assert res.returncode != 0
+    assert "usage" in (res.stdout + res.stderr)
+
+
+def test_s00b_bootstrap_never_reaches_capture_off_hardware(repo_root: Path) -> None:
+    """Off-hardware the run must stop at a gate and never reach env-capture, whichever gate
+    fires first (a dirty tree during development, or the absent H100)."""
+    if shutil.which("nvidia-smi"):
+        pytest.skip("H100 present; the no-GPU branch is not the live one")
+    head = _git(repo_root, "rev-parse", "HEAD").stdout.strip()
+    res = _run(["bash", "scripts/bootstrap_runpod_s00b.sh", head], repo_root)
+    combined = res.stdout + res.stderr
+    assert res.returncode != 0
+    assert "S00B_BOOTSTRAP = FAIL" in combined
+    assert "S00B_BOOTSTRAP = PASS" not in combined
+    assert "== 8. environment capture" not in combined
+    assert any(gate in combined for gate in ("working tree is dirty", "nvidia-smi absent"))

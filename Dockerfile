@@ -35,21 +35,42 @@ COPY . .
 CMD ["make", "preflight"]
 
 # ---------------------------------------------------------------- science lane (S00-B)
-# Resolve on the RunPod H100 SXM image per 01 §12 steps 2-9, then build with:
-#   --build-arg SCIENCE_BASE_IMAGE=<repo>@sha256:<digest>
-#   --build-arg IMAGE_DIGEST=sha256:<digest>
-# A tag without a digest is rejected by capture_environment.sh.
-ARG SCIENCE_BASE_IMAGE=TBD_REQUIRES_HARDWARE
-FROM ${SCIENCE_BASE_IMAGE} AS science
+# Built OUTSIDE the RunPod pod (locally or in CI), pushed to a registry, then launched on
+# RunPod BY DIGEST as a custom container image. Docker is not available inside a stock pod,
+# so nothing here requires Docker-in-Docker [AUTH: 01 §12(8)(9), §9].
+#
+# The base is the same digest-pinned CPython 3.13 image as the CPU lane: torch's cu130 build
+# pulls 15 pinned nvidia-* wheels, so the CUDA runtime is locked in uv.lock rather than
+# inherited from a mutable NVIDIA base image. Only the host driver is needed, which RunPod
+# provides (observed: 580.126.09, CUDA 13.0).
+FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS science
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_FROZEN=1
 COPY --from=uvbin /uv /usr/local/bin/uv
 WORKDIR /repo
-ARG SCIENCE_BASE_IMAGE
-ARG IMAGE_DIGEST=TBD_REQUIRES_HARDWARE
-RUN printf '{"image_ref":"%s","image_digest":"%s","lane":"science"}\n' \
-      "$SCIENCE_BASE_IMAGE" "$IMAGE_DIGEST" > /etc/pmm-image.json
+RUN apt-get update && apt-get install -y --no-install-recommends git make ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-# The CUDA-coupled dependency set is added to uv.lock at S00-B; until then this fails.
-RUN uv sync --frozen --no-install-project
+# --frozen never re-resolves: a drifted lock fails the build [AUTH: 01 §12, §46].
+RUN uv sync --frozen --extra cpu-dev --extra science --no-install-project
 COPY . .
+
+# ------------------------------------------------------- sealed science image (pass 2)
+# An image cannot contain its own digest, so identity is sealed in a second pass:
+#   1. build+push the `science` stage            -> immutable digest D
+#   2. build+push this stage FROM that digest    -> bakes D into /etc/pmm-image.json
+# The sealed image is one metadata layer on top of an immutable parent, so the identity it
+# reports is verifiable from the registry. capture_environment.sh reads it from inside the
+# image and never trusts an environment variable [AUTH: 01 §12(8)(9), §16; 03 §8].
+ARG SEALED_PARENT_REF=TBD_REQUIRES_HARDWARE
+ARG SEALED_PARENT_DIGEST=TBD_REQUIRES_HARDWARE
+FROM ${SEALED_PARENT_REF}@${SEALED_PARENT_DIGEST} AS science-sealed
+ARG SEALED_PARENT_REF
+ARG SEALED_PARENT_DIGEST
+ARG BASE_IMAGE_REF="python:3.13-slim"
+ARG BASE_IMAGE_DIGEST="sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a"
+ARG SOURCE_GIT_COMMIT=TBD_REQUIRES_HARDWARE
+RUN printf '{"image_ref":"%s","image_digest":"%s","base_image_ref":"%s","base_image_digest":"%s","source_git_commit":"%s","lane":"science"}\n' \
+      "$SEALED_PARENT_REF" "$SEALED_PARENT_DIGEST" \
+      "$BASE_IMAGE_REF" "$BASE_IMAGE_DIGEST" "$SOURCE_GIT_COMMIT" > /etc/pmm-image.json

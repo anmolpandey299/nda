@@ -51,10 +51,14 @@ PYTHON_VERSION="$($PY -c 'import platform;print(platform.python_version())')"
 IMAGE_IDENTITY_SOURCE="NONE"
 BAKED="/etc/pmm-image.json"
 if [ -r "$BAKED" ]; then
-  DOCKER_IMAGE_TAG="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["image_ref"])' "$BAKED" 2>/dev/null || echo "$TBD")"
-  DOCKER_IMAGE_DIGEST="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["image_digest"])' "$BAKED" 2>/dev/null || echo "$TBD")"
+  DOCKER_IMAGE_TAG="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("image_ref",""))' "$BAKED" 2>/dev/null || echo "$TBD")"
+  DOCKER_IMAGE_DIGEST="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("image_digest",""))' "$BAKED" 2>/dev/null || echo "$TBD")"
+  IMAGE_LANE="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("lane",""))' "$BAKED" 2>/dev/null || echo "$TBD")"
+  BASE_IMAGE_DIGEST="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("base_image_digest",""))' "$BAKED" 2>/dev/null || echo "$TBD")"
+  IMAGE_SOURCE_COMMIT="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("source_git_commit",""))' "$BAKED" 2>/dev/null || echo "$TBD")"
   IMAGE_IDENTITY_SOURCE="BAKED_INTO_IMAGE"
 else
+  IMAGE_LANE="$TBD"; BASE_IMAGE_DIGEST="$TBD"; IMAGE_SOURCE_COMMIT="$TBD"
   DOCKER_IMAGE_TAG="${DOCKER_IMAGE_TAG:-$TBD}"
   DOCKER_IMAGE_DIGEST="${DOCKER_IMAGE_DIGEST:-$TBD}"
   if [ "$DOCKER_IMAGE_DIGEST" != "$TBD" ]; then
@@ -76,7 +80,7 @@ fi
 BF16_FP32_TOLERANCE="${BF16_FP32_TOLERANCE:-$TBD}"
 NONDETERMINISM_SOURCES="${NONDETERMINISM_SOURCES:-$TBD}"
 DEPS="$($PY -m pip freeze 2>/dev/null | tr '\n' ';' || echo "$TBD")"
-export IMAGE_IDENTITY_SOURCE
+export IMAGE_IDENTITY_SOURCE IMAGE_LANE BASE_IMAGE_DIGEST IMAGE_SOURCE_COMMIT
 
 TMP="$(mktemp)"
 UV_LOCK_SHA256="$UV_LOCK_SHA256" NVIDIA_SMI="$NVIDIA_SMI" GPU_MODEL="$GPU_MODEL" \
@@ -86,7 +90,8 @@ TORCH_CUDA_BUILD="$TORCH_CUDA_BUILD" PYTHON_VERSION="$PYTHON_VERSION" \
 DOCKER_IMAGE_TAG="$DOCKER_IMAGE_TAG" DOCKER_IMAGE_DIGEST="$DOCKER_IMAGE_DIGEST" \
 BF16_FP32_TOLERANCE="$BF16_FP32_TOLERANCE" NONDETERMINISM_SOURCES="$NONDETERMINISM_SOURCES" \
 DEPS="$DEPS" OUT_DIR="$OUT_DIR" IMAGE_IDENTITY_SOURCE="$IMAGE_IDENTITY_SOURCE" \
-"$PY" - <<'PYEOF' > "$TMP"
+IMAGE_LANE="$IMAGE_LANE" BASE_IMAGE_DIGEST="$BASE_IMAGE_DIGEST" \
+IMAGE_SOURCE_COMMIT="$IMAGE_SOURCE_COMMIT" "$PY" - <<'PYEOF' > "$TMP"
 import datetime, json, os, sys
 sys.path.insert(0, "scripts")
 from preflight import environment_lock_sha256, validate_environment_manifest
@@ -108,6 +113,9 @@ m = {
     "bf16_fp32_tolerance": os.environ["BF16_FP32_TOLERANCE"],
     "nondeterminism_sources": os.environ["NONDETERMINISM_SOURCES"],
     "image_identity_source": os.environ["IMAGE_IDENTITY_SOURCE"],
+    "image_lane": os.environ["IMAGE_LANE"],
+    "base_image_digest": os.environ["BASE_IMAGE_DIGEST"],
+    "image_source_git_commit": os.environ["IMAGE_SOURCE_COMMIT"],
     "capture_timestamp_utc": datetime.datetime.now(datetime.UTC).isoformat(),
     "authority": "01 §12(2)-(9), §15, §16, §30, §32",
 }

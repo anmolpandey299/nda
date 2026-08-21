@@ -206,6 +206,14 @@ REQUIRED_PATHS: tuple[str, ...] = (
     "scripts/capture_environment.sh",
     "scripts/install_git_hooks.sh",
     "scripts/preflight.py",
+    "scripts/build_bundle.py",
+    "scripts/make_review_worktree.sh",
+    "scripts/build_science_image.sh",
+    "scripts/bootstrap_runpod_s00b.sh",
+    "tests/backend_contract/test_backend_contract.py",
+    "tests/gpu_smoke/test_cuda_torch_contract.py",
+    "tests/gpu_smoke/test_env_capture_contract.py",
+    "manifests/environments/S00B_HARDWARE_PROBE.json",
 )
 
 #: Paths that must NOT exist [AUTH: plan §3.1; 01 §18, §32].

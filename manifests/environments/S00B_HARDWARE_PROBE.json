@@ -1,0 +1,33 @@
+{
+  "accepted_as_environment_lock": false,
+  "authority": "01 \u00a712, \u00a716; 03 \u00a78; plan \u00a75.4, \u00a75.6, \u00a75.7",
+  "consequence": "S00-B is satisfied only by the sealed science image built outside the pod and launched by digest. Selection recorded in pyproject.toml [project.optional-dependencies].science and pinned in uv.lock: torch 2.13.0+cu130 on CPython 3.13, the CUDA 13.0 build matching driver 580.126.09 exactly.",
+  "observed": {
+    "compute_capability": "9.0",
+    "docker_available_in_pod": false,
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "host_reported_cuda_compatibility": "13.0",
+    "nvidia_driver": "580.126.09",
+    "pmm_image_json_present": false,
+    "stock_container_python": "3.11.10",
+    "stock_torch": "2.4.1+cu124",
+    "torch_cuda_is_available": true,
+    "uv_installed_in_pod": false
+  },
+  "record_type": "HARDWARE_PROBE",
+  "rejected_because": [
+    "stock RunPod container Python is 3.11.10, which does not satisfy the frozen requires-python >=3.13,<3.14",
+    "stock torch 2.4.1+cu124 was preinstalled, not selected; it has no CPython 3.13 build and its CUDA build does not match the driver's CUDA 13.0",
+    "uv is not installed, so the frozen uv.lock cannot be the installed environment",
+    "/etc/pmm-image.json is absent, so the container has no sealed identity [AUTH: 01 \u00a712(9)]",
+    "Docker is unavailable inside the pod, so the image cannot be built there"
+  ],
+  "still_unmeasured": [
+    "bf16_fp32_tolerance",
+    "nondeterminism_sources",
+    "batch_size",
+    "throughput_sequences_per_second",
+    "peak_vram",
+    "projected_gpu_hours"
+  ]
+}

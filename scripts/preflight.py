@@ -111,6 +111,12 @@ def validate_environment_manifest(manifest: dict[str, object]) -> list[str]:
     return [k for k in required if k not in manifest]
 
 
+def is_environment_lock_manifest(path: Path) -> bool:
+    """A capture writes `<ENVIRONMENT_LOCK_SHA256>.json`. Anything else in that directory is
+    metadata (an AI-stack record, a hardware probe) and is not an environment lock."""
+    return bool(SHA256_RE.match(path.stem)) and path.suffix == ".json"
+
+
 def environment_identity_status(root: Path) -> tuple[str, list[str]]:
     """Recompute the current environment identity from the frozen components.
 
@@ -124,7 +130,7 @@ def environment_identity_status(root: Path) -> tuple[str, list[str]]:
     if not env_dir.is_dir():
         return TBD, ["no manifests/environments directory"]
     for path in sorted(env_dir.glob("*.json")):
-        if path.name == "AI_ENGINEERING_STACK_S00.json":
+        if not is_environment_lock_manifest(path):
             continue
         rel = path.relative_to(root).as_posix()
         try:

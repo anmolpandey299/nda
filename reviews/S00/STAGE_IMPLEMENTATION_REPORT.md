@@ -177,6 +177,61 @@ make bundle ; make bundle-verify ; make preflight
 bash scripts/make_review_worktree.sh <commit> <dest> S00
 ```
 
+## 3B. S00-B science-environment finalisation
+
+### Hardware probe outcome — stock pod REJECTED
+
+The first real RunPod H100 probe is recorded in
+`manifests/environments/S00B_HARDWARE_PROBE.json` and is explicitly **not** accepted as
+S00-B. Observed: NVIDIA H100 80GB HBM3, compute capability 9.0, driver 580.126.09, host CUDA
+13.0, `torch.cuda.is_available()` true. Rejected because the stock container ships Python
+3.11.10 (violating the frozen `requires-python >=3.13,<3.14`), a preinstalled torch
+2.4.1+cu124 with no CPython 3.13 build, no uv, no Docker and no `/etc/pmm-image.json`.
+
+### Selection, and why
+
+```text
+SCIENCE_PYTHON      3.13
+SCIENCE_TORCH       2.13.0
+SCIENCE_CUDA_BUILD  cu130
+```
+
+torch 2.13.0 is the current production release carrying a `cp313 manylinux_2_28_x86_64`
+wheel; verified against the PyPI release index and the download.pytorch.org cu130 index
+rather than assumed. The stock 2.4.1+cu124 is not reused: it has no CPython 3.13 build at
+all, so reusing it would break the already-frozen interpreter requirement. The `cu130` build
+matches the driver's reported CUDA 13.0 exactly, so no minor-version compatibility fallback
+is relied upon. Resolution was proved before pinning: transformers 5.15.1, peft 0.20.0,
+accelerate 1.14.0 and opacus 1.6.0 all resolve against it on cp313.
+
+The CUDA runtime is itself locked — torch pulls 15 pinned `nvidia-*` wheels — so the science
+image needs no mutable NVIDIA base image and the runtime is hash-pinned like everything else.
+
+One CPU/dev pin moved as a consequence: `tokenizers` 0.23.1 -> 0.22.2, constrained by
+transformers 5.15.1. This is the F4 branch working as designed; the S00-B lock is
+authoritative and the move is recorded here [AUTH: plan §17 F4].
+
+### Image and workflow — no Docker-in-Docker on RunPod
+
+An image cannot contain its own digest, so identity is sealed in two passes: build and push
+the `science` stage, read its immutable digest, then build `science-sealed` FROM that digest
+and bake `image_ref`, `image_digest`, `base_image_digest`, `source_git_commit` and
+`lane: "science"` into `/etc/pmm-image.json`. `capture_environment.sh` still reads that file
+from inside the image and still forces a caller-supplied digest to `TBD_REQUIRES_HARDWARE`.
+
+```text
+scripts/build_science_image.sh       build + push + seal, OFF the pod
+scripts/bootstrap_runpod_s00b.sh     11 fail-closed gates, then capture and the lanes
+stage_acceptance/S00/10_REPRODUCE.md exact commands for all three steps
+```
+
+### Not measured, and not invented
+
+`bf16_fp32_tolerance`, `nondeterminism_sources`, batch size, throughput, peak VRAM and the
+GPU-hour projections remain `TBD_REQUIRES_HARDWARE` until the sealed image actually runs on
+the H100 [AUTH: 03 §8; 00 §0.2.4; 01 §30]. `ENVIRONMENT_LOCK_SHA256` is still unresolved, so
+`P0_PRE_READY` remains false and no run can be evidentiary.
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.

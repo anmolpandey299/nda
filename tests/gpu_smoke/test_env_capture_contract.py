@@ -14,6 +14,7 @@ from preflight import (
     TBD,
     environment_identity_status,
     environment_lock_sha256,
+    is_environment_lock_manifest,
     validate_environment_manifest,
 )
 
@@ -24,7 +25,7 @@ ENV_DIR = REPO_ROOT / "manifests" / "environments"
 def _captured() -> list[Path]:
     if not ENV_DIR.is_dir():
         return []
-    return [p for p in sorted(ENV_DIR.glob("*.json")) if p.name != "AI_ENGINEERING_STACK_S00.json"]
+    return [p for p in sorted(ENV_DIR.glob("*.json")) if is_environment_lock_manifest(p)]
 
 
 requires_capture = pytest.mark.skipif(

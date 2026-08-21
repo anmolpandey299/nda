@@ -25,19 +25,79 @@ artifacts/p0_pre/P0_PRE_READINESS.json
 `make synthetic`, `make backend-contract` and `make gpu-smoke` report `NOT_RUN(<reason>)`.
 An empty lane never reports `PASS` [AUTH: 02 §C6; 00 §34B.3].
 
-## Reproducing S00-B (requires an H100)
+## S00-B — the frozen science environment
 
-```bash
-# on the RunPod H100 SXM image, per 01 §12 steps 2-9
-uv sync                                             # adds the CUDA-coupled set, relocks
-DOCKER_IMAGE_TAG=... DOCKER_IMAGE_DIGEST=... make env-capture
-make gpu-smoke
+The stock RunPod container is **not** the science environment: its Python is 3.11.10, its
+preinstalled torch is 2.4.1+cu124 (no CPython 3.13 build), uv is absent, Docker is
+unavailable and `/etc/pmm-image.json` does not exist. The probe is recorded, and explicitly
+rejected, in `manifests/environments/S00B_HARDWARE_PROBE.json`.
+
+### Selection, frozen in pyproject.toml + uv.lock
+
+```text
+SCIENCE_PYTHON      3.13            (satisfies the frozen requires-python >=3.13,<3.14)
+SCIENCE_TORCH       2.13.0          (current production release with a cp313 manylinux
+                                     x86_64 wheel; the stock 2.4.1 has none)
+SCIENCE_CUDA_BUILD  cu130           (driver 580.126.09 reports CUDA 13.0, so this is an
+                                     exact match, not a minor-version fallback)
+transformers 5.15.1 · peft 0.20.0 · accelerate 1.14.0 · opacus 1.6.0
+CUDA runtime        15 pinned nvidia-* wheels in uv.lock, so no mutable NVIDIA base image
 ```
 
-`make env-capture` exits non-zero while any component is unresolved, so an unresolved
-environment can never look captured [AUTH: 03 §8].
+### Step 1 — build and seal the image, OFF the pod
+
+Docker is unavailable inside a RunPod pod, so the image is built locally or in CI. Nothing
+below requires Docker-in-Docker.
+
+```bash
+git checkout <candidate-commit>
+bash scripts/build_science_image.sh <registry>/<repo> s00b
+```
+
+Two passes, because an image cannot contain its own digest: pass 1 builds and pushes the
+`science` stage and reads its immutable digest; pass 2 builds `science-sealed` from that
+digest and bakes `image_ref`, `image_digest`, `base_image_digest`, `source_git_commit` and
+`lane: "science"` into `/etc/pmm-image.json`. Both digests are written to
+`manifests/environments/S00B_IMAGE_RECORD.json`.
+
+### Step 2 — launch RunPod by digest, never by tag
+
+```text
+RunPod -> Pods -> Deploy -> H100 SXM 80GB
+Container image: <registry>/<repo>@sha256:<sealed_image_digest>
+```
+
+The tag moves; the digest does not [AUTH: 01 §12(9)].
+
+### Step 3 — inside the pod, verify and capture
+
+```bash
+git clone <repo> /repo && cd /repo
+git checkout <candidate-commit>
+bash scripts/bootstrap_runpod_s00b.sh <candidate-commit>
+```
+
+That single command fails closed on any mismatch and, in order, verifies the exact commit, a
+clean tree, an H100, Python 3.13.x, torch 2.13.0+cu130, `torch.cuda.is_available()`, compute
+capability (9, 0), and the sealed image metadata; then runs `make env-capture`,
+`make gpu-smoke`, `make preflight` and `make bundle-verify`.
+
+On success `manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json` exists,
+`ENVIRONMENT_LOCK_SHA256` is resolved, and S00-B is closed. Commit that manifest.
+
+### Still unmeasured after S00-B
+
+`make env-capture` records only what it observes. These require their own runs and stay
+`TBD_REQUIRES_HARDWARE` until then [AUTH: 03 §8; 00 §0.2.4; 01 §30]:
+
+```text
+bf16_fp32_tolerance                     measured on the image over fixed sequences
+nondeterminism_sources, run-to-run tolerance                              01 §30
+batch size, throughput q, peak VRAM, projected GPU-hours   S10 benchmark, 00 §0.2.4
+```
 
 ## Determinism notes
+
 
 The CPU/dev lane pins every tool through `uv.lock`, so `make lint` and `make typecheck`
 cannot flip against a byte-identical tree. The scientific lane's determinism is measured, not
