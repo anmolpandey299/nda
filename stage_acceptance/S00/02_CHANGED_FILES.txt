@@ -26,6 +26,7 @@ manifests/data/.gitkeep
 manifests/environments/.gitkeep
 manifests/environments/AI_ENGINEERING_STACK_S00.json
 manifests/environments/S00B_HARDWARE_PROBE.json
+manifests/environments/S00B_IMAGE_RECORD.json
 manifests/models/.gitkeep
 manifests/runs/.gitkeep
 pyproject.toml
