@@ -142,13 +142,81 @@ def test_capture_still_reads_identity_from_inside_the_image(repo_root: Path) -> 
 
 
 # ------------------------------------------------------------------ workflow
+TARGET_PLATFORM = "linux/amd64"
+
+
+@pytest.fixture(scope="module")
+def build_script(repo_root: Path) -> str:
+    return (repo_root / "scripts" / "build_science_image.sh").read_text(encoding="utf-8")
+
+
+def _build_passes(script: str) -> list[str]:
+    """The two `docker buildx build` invocations, as text blocks."""
+    parts = script.split("docker buildx build")[1:]
+    return [p.split("\n\n", 1)[0] for p in parts]
+
+
 def test_build_script_runs_outside_the_pod_and_needs_no_docker_in_docker(
-    repo_root: Path,
+    build_script: str,
 ) -> None:
-    script = (repo_root / "scripts" / "build_science_image.sh").read_text(encoding="utf-8")
-    assert "docker is required on the BUILD host" in script
-    assert "--target science" in script and "--target science-sealed" in script
-    assert "RepoDigests" in script, "the pushed digest must be read, not assumed"
+    assert "docker is required on the BUILD host" in build_script
+    assert "--target science \\" in build_script
+    assert "--target science-sealed \\" in build_script
+    assert "containerimage.digest" in build_script, (
+        "the pushed digest must come from buildx metadata, not the local image store"
+    )
+
+
+def test_both_passes_build_for_linux_amd64(build_script: str) -> None:
+    """RunPod rejected an arm64-only push with 'no matching manifest for linux/amd64'.
+    A plain `docker build` on Apple Silicon produces arm64, so the platform is explicit."""
+    passes = _build_passes(build_script)
+    assert len(passes) == 2, f"expected two buildx passes, found {len(passes)}"
+    for index, block in enumerate(passes, start=1):
+        assert '--platform "$TARGET_PLATFORM"' in block, f"pass {index} has no --platform"
+        assert "--push" in block, f"pass {index} does not push from buildx"
+    assert f'TARGET_PLATFORM="{TARGET_PLATFORM}"' in build_script
+
+
+def test_pass_one_and_two_target_the_right_stages(build_script: str) -> None:
+    first, second = _build_passes(build_script)
+    assert "--target science \\" in first and "science-sealed" not in first
+    assert "--target science-sealed \\" in second
+
+
+def test_buildx_is_required_and_the_local_store_is_not_trusted(build_script: str) -> None:
+    assert "docker buildx version" in build_script
+    assert "docker build " not in build_script.replace("docker buildx build ", "")
+    assert "RepoDigests" not in build_script
+    assert "\ndocker push" not in build_script
+
+
+def test_pushed_manifest_is_verified_to_contain_linux_amd64(build_script: str) -> None:
+    """Fail closed if the registry artifact has no linux/amd64 entry."""
+    assert "require_amd64" in build_script
+    assert build_script.count("require_amd64 ") >= 2, "both passes must be verified"
+    assert "imagetools inspect" in build_script
+    assert "contains no " in build_script and "RunPod H100 would reject it" in build_script
+
+
+def test_arm64_is_not_built(build_script: str) -> None:
+    """The scientific execution target is RunPod H100 linux/amd64 only. arm64 may be named in
+    prose explaining the failure, but never in a --platform argument."""
+    code = "\n".join(
+        line for line in build_script.splitlines() if not line.lstrip().startswith("#")
+    )
+    platform_args = re.findall(r"--platform\s+(\S+)", code)
+    assert platform_args, "no --platform argument found"
+    assert all(arg == '"$TARGET_PLATFORM"' for arg in platform_args), platform_args
+    assert f'TARGET_PLATFORM="{TARGET_PLATFORM}"' in build_script
+    assert "arm64" not in code
+
+
+def test_two_pass_sealed_design_is_preserved(build_script: str) -> None:
+    assert "SEALED_PARENT_DIGEST=${DIGEST}" in build_script
+    assert "SOURCE_GIT_COMMIT=${COMMIT}" in build_script
+    assert "sealed_image_digest" in build_script
+    assert "refusing to build from a dirty tree" in build_script
 
 
 def test_bootstrap_checks_every_required_property(repo_root: Path) -> None:

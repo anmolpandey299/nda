@@ -1,0 +1,12 @@
+{
+  "authority": "01 \u00a712(8)(9), \u00a716; plan \u00a75.6",
+  "base_image_digest": "sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a",
+  "base_image_ref": "python:3.13-slim",
+  "image_ref": "ghcr.io/anmolpandey299/nda",
+  "image_tag": "s00b",
+  "lane": "science",
+  "note": "Launch RunPod with sealed_image_digest, never with the tag.",
+  "sealed_image_digest": "sha256:c9014258438f022e48d8b922088810173654888a101fc08281ad004dcbcf695f",
+  "source_git_commit": "f42d7a77de959d534ac5e26899e3858327c61e18",
+  "unsealed_parent_digest": "sha256:16b37053b20c6b5cd2e801fd819c92611621b5e9983e51429380c4bb06b42757"
+}

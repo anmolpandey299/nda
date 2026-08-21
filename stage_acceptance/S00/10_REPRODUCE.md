@@ -51,8 +51,17 @@ below requires Docker-in-Docker.
 
 ```bash
 git checkout <candidate-commit>
+docker buildx version          # required; a plain `docker build` on Apple Silicon
+                               # produces linux/arm64 and RunPod rejects it with
+                               # "no matching manifest for linux/amd64"
 bash scripts/build_science_image.sh <registry>/<repo> s00b
 ```
+
+Both passes build with `docker buildx --platform linux/amd64 --push`, take the digest from
+buildx metadata rather than the local image store, and fail closed unless
+`docker buildx imagetools inspect` shows a `linux/amd64` manifest in the pushed artifact.
+`linux/arm64` is deliberately not built: the scientific execution target is a RunPod H100 on
+`linux/amd64`.
 
 Two passes, because an image cannot contain its own digest: pass 1 builds and pushes the
 `science` stage and reads its immutable digest; pass 2 builds `science-sealed` from that

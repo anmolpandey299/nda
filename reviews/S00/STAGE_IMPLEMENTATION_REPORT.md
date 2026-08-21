@@ -232,6 +232,35 @@ GPU-hour projections remain `TBD_REQUIRES_HARDWARE` until the sealed image actua
 the H100 [AUTH: 03 §8; 00 §0.2.4; 01 §30]. `ENVIRONMENT_LOCK_SHA256` is still unresolved, so
 `P0_PRE_READY` remains false and no run can be evidentiary.
 
+## 3C. S00-B platform repair
+
+RunPod rejected the first sealed image with `no matching manifest for linux/amd64 in the
+manifest list entries`. Root cause: `scripts/build_science_image.sh` used a plain
+`docker build` with no `--platform`, so on the Apple Silicon build host it produced a
+`linux/arm64` image, pushed it, and read the digest back out of the local image store.
+
+Repaired in `scripts/build_science_image.sh` only:
+
+```text
+both passes now  docker buildx build --platform linux/amd64 --target <stage> --push
+digest source    buildx --metadata-file containerimage.digest, never the local image store
+verification     docker buildx imagetools inspect must show a linux/amd64 manifest in the
+                 PUSHED artifact, for pass 1 and pass 2; anything else fails closed
+builder          an idempotent docker-container builder, since the default docker driver
+                 cannot reliably push a cross-platform build
+arm64            deliberately not built; the execution target is RunPod H100 linux/amd64
+```
+
+Preserved unchanged: the two-pass sealed design, immutable parent-digest resolution,
+`/etc/pmm-image.json`, the exact `SOURCE_GIT_COMMIT`, and the fail-closed clean-tree gate.
+The image-content selection (python 3.13, torch 2.13.0+cu130) is untouched.
+
+The manifest verifier was exercised against seven registry shapes before commit: an index
+carrying amd64 plus an `unknown/unknown` attestation, an arm64-only index, single-image
+amd64 and arm64, a platform-keyed image map, capitalised JSON keys, and an empty document.
+It accepts the four amd64 shapes and rejects the three others.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.
