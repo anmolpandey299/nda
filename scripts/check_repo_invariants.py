@@ -205,6 +205,7 @@ REQUIRED_PATHS: tuple[str, ...] = (
     "logs",
     "scripts/check_repo_invariants.py",
     "scripts/capture_environment.sh",
+    "scripts/capture_environment.py",
     "scripts/install_git_hooks.sh",
     "scripts/preflight.py",
     "scripts/build_bundle.py",
@@ -218,7 +219,14 @@ REQUIRED_PATHS: tuple[str, ...] = (
 )
 
 #: Paths that must NOT exist [AUTH: plan §3.1; 01 §18, §32].
-FORBIDDEN_PATHS: tuple[str, ...] = ("notebooks", "serving", "STAGE_PLAN.md")
+FORBIDDEN_PATHS: tuple[str, ...] = (
+    "notebooks",
+    "serving",
+    "STAGE_PLAN.md",
+    # A failed environment capture must leave nothing behind; this filename was produced by
+    # the earlier non-transactional implementation [AUTH: 01 §12, §16].
+    "manifests/environments/TBD_REQUIRES_HARDWARE.json",
+)
 
 PLAN_LINE_CAP = 1200
 TBD = "TBD_REQUIRES_HARDWARE"

@@ -140,10 +140,13 @@ def test_science_image_installs_only_from_the_frozen_lock(repo_root: Path) -> No
 
 
 def test_capture_still_reads_identity_from_inside_the_image(repo_root: Path) -> None:
-    script = (repo_root / "scripts" / "capture_environment.sh").read_text(encoding="utf-8")
-    assert "/etc/pmm-image.json" in script
-    assert "CALLER_SUPPLIED_UNVERIFIED" in script
-    assert "IMAGE_LANE" in script
+    """Identity comes from inside the image, whichever file implements the capture."""
+    module = (repo_root / "scripts" / "capture_environment.py").read_text(encoding="utf-8")
+    assert "/etc/pmm-image.json" in module
+    assert "CALLER_SUPPLIED_UNVERIFIED" in module
+    assert "image_lane" in module
+    wrapper = (repo_root / "scripts" / "capture_environment.sh").read_text(encoding="utf-8")
+    assert "capture_environment.py" in wrapper
 
 
 # ------------------------------------------------------------------ workflow

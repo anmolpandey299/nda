@@ -393,9 +393,12 @@ def test_fix6_docker_bases_are_digest_pinned(repo_root: Path) -> None:
 
 
 def test_fix6_capture_does_not_trust_caller_supplied_identity(repo_root: Path) -> None:
-    script = (repo_root / "scripts" / "capture_environment.sh").read_text(encoding="utf-8")
-    assert "/etc/pmm-image.json" in script
-    assert "CALLER_SUPPLIED_UNVERIFIED" in script
+    """The capture body now lives in capture_environment.py; the guarantee is unchanged."""
+    module = (repo_root / "scripts" / "capture_environment.py").read_text(encoding="utf-8")
+    assert "/etc/pmm-image.json" in module
+    assert "CALLER_SUPPLIED_UNVERIFIED" in module
+    wrapper = (repo_root / "scripts" / "capture_environment.sh").read_text(encoding="utf-8")
+    assert "capture_environment.py" in wrapper
 
 
 def test_fix6_gpu_and_backend_lanes_collect_tests(repo_root: Path) -> None:

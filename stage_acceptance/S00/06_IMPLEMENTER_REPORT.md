@@ -311,6 +311,63 @@ Dockerfile directly. Both `check_image_pins` and `check_build_context` are now r
 unwired again.
 
 
+## 3E. S00-B environment-capture repair
+
+Gates 1-7 of the bootstrap passed on the real H100 inside the valid sealed image; capture
+itself failed and left five fields unresolved. Each had a distinct cause, and each is fixed
+against the controlling authority rather than by relaxing the requirement.
+
+```text
+cuda_runtime            capture required `nvcc`. The science image is runtime-only by design
+                        and nvcc belongs to the CUDA development toolkit. Resolved instead
+                        from the frozen installed distribution metadata, newest naming first:
+                        nvidia-cuda-runtime, -cu13, -cu12. Observed value 13.0.96. Kept
+                        separate from torch_cuda_build (13.0) and cuda_driver (580.126.09).
+dependency_versions     capture ran `python -m pip freeze`; pip is absent by design. Replaced
+                        with importlib.metadata over installed distributions: normalised,
+                        deduplicated, sorted, no package manager, no network, no install.
+bf16_fp32_tolerance     was defaulted to TBD. Now MEASURED: a fixed-seed, fixed-shape matmul
+                        computed in FP32 (reference) and BF16 (compared) on the device, with
+                        autocast explicitly disabled so no AMP default decides the arithmetic
+                        [AUTH: 01 §10]. Records max/mean absolute error, max relative error
+                        and the reference scale. No threshold is chosen anywhere.
+nondeterminism_sources  was caller-supplied prose. Now captured structurally: cuDNN version,
+                        enabled/deterministic/benchmark/allow_tf32, cuda.matmul.allow_tf32,
+                        float32_matmul_precision, deterministic_algorithms,
+                        CUBLAS_WORKSPACE_CONFIG, plus the run-to-run tolerance measured over
+                        repeated identical FP32 and BF16 passes, which is what 01 §30
+                        actually requires ("document the exact source and measure run-to-run
+                        tolerance").
+environment_lock_sha256 no longer special-cased. It resolves only once every component is
+                        present, and publication re-derives it from the finalised manifest
+                        and refuses to publish unless it matches.
+```
+
+### Transactional publication
+
+The failed run had written `manifests/environments/TBD_REQUIRES_HARDWARE.json`. That is now
+impossible: the manifest is built in memory, schema-validated, checked for any unresolved
+field, given an identity that must be 64 lowercase hex, and re-derived for equality — only
+then is it written to a temporary file in the target directory and `os.replace`d into
+`<identity>.json`. A failure writes nothing and leaves no temporary file; a stale
+`TBD_REQUIRES_HARDWARE.json` from the old implementation is deleted on the next success. The
+filename is also now a forbidden path in the invariant checker.
+
+### What was deliberately NOT done
+
+The real hardware values you reported were used to drive and test the implementation. They
+were **not** written into an environment manifest. Fabricating a manifest from reported
+values is precisely the caller-supplied-identity failure mode the capture is built to refuse;
+the manifest must be produced by capture running on the pod. `ENVIRONMENT_LOCK_SHA256`
+therefore remains unresolved in this repository and `P0_PRE_READY` stays false.
+
+The capture body moved from inline bash into `scripts/capture_environment.py` so it can be
+exercised against mocked H100 hardware; `capture_environment.sh` is now a wrapper and
+`make env-capture` is unchanged. The image-identity anti-forgery behaviour, uv.lock hashing,
+nvidia-smi capture, GPU/driver capture and fail-closed semantics were ported unchanged and
+are re-tested.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.
