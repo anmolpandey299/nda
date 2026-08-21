@@ -1,6 +1,6 @@
 {
   "authority": "01 \u00a716, \u00a726(13), \u00a745",
-  "described_commit": "a79cf2acb9b31554a2d40642d8aa1a2f80c32850",
+  "described_commit": "27ab476627ba78c39fa92ad320b36b8ebf66bc2f",
   "environment_lock_sha256": "TBD_REQUIRES_HARDWARE",
   "file_count": 105,
   "files": {
@@ -76,8 +76,8 @@
     "stage_acceptance/S00/04_TEST_OUTPUTS/00_format.log": "1071d20cf2d8310506cf00e8c2586b0bd1b883853a9bcda1fc23021c22e2b08b",
     "stage_acceptance/S00/04_TEST_OUTPUTS/01_lint.log": "f97b1ddbb5321d384247285f64ed2bfae79bcf2fd9a9fd908427355e1747d90d",
     "stage_acceptance/S00/04_TEST_OUTPUTS/02_typecheck.log": "06656f001db2c621fe7ba05bacee4752e6eabb43223da634109ad6c746b9328d",
-    "stage_acceptance/S00/04_TEST_OUTPUTS/03_unit.log": "53fc74207fc99e992ce76b44cdb1b5564f42d0ee773de4a4ca4c5b1b594f6a98",
-    "stage_acceptance/S00/04_TEST_OUTPUTS/04_integration.log": "b7916e0d5038d43c2b695e5e9148aab65a0ebcb75512fccd95f28a6d57aba85e",
+    "stage_acceptance/S00/04_TEST_OUTPUTS/03_unit.log": "a47587c2e7b7332c67e1b63f75377daa304c404f1121cb2099f0a2929f3d348a",
+    "stage_acceptance/S00/04_TEST_OUTPUTS/04_integration.log": "8642582e438f30bd3bf4d29bcd46ebb90927e4a96662c905bd30ba65db26cc57",
     "stage_acceptance/S00/04_TEST_OUTPUTS/05_synthetic.log": "744e51b66c66bc9288e2449dd87c8004fb6b6ad9164e5d4ea7c8821416e20683",
     "stage_acceptance/S00/04_TEST_OUTPUTS/06_backend_contract.log": "8ab7446e57004325e417d9ed003989203915a07b3be431760e96595184f6424c",
     "stage_acceptance/S00/04_TEST_OUTPUTS/07_gpu_smoke.log": "f37dbf8019921d0b38f907bdc951d82a96524b56056b85c35ddfcb797f9e0e7a",
