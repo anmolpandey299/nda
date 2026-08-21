@@ -363,15 +363,16 @@ this commit alone [AUTH: 01 §33, §46; plan §5.2, C-03 closure].
 ```text
 branch             stage/s00   (main and experiment-frozen do not exist yet; they are created
                                 at acceptance and are protected [AUTH: 01 §27])
-candidate commit   9a1bcdee46d63904b4272e44555e810275eb8b9f
-                   "S00-B: build the science image for linux/amd64 with buildx"
+candidate commit   d4dac4f5c221ff9cb9f78ca8ff55a026c1d38caa
+                   "S00-B: stop the host virtualenv contaminating the science image"
 history            f7e6ee0 bootstrap
                    aaac605 acceptance bundle + AI-stack provenance
                    e481543 report / manifest refresh
                    27ab476 final implementation-fix pass (FIX 1-9)
                    4d0bdaf bundle regenerated for 27ab476
                    ecaaaf6 S00-B science image specification
-                   9a1bcde S00-B linux/amd64 build repair        <- candidate
+                   9a1bcde S00-B linux/amd64 build repair
+                   d4dac4f S00-B host-venv contamination repair  <- candidate
 bundle commit      HEAD, carrying only stage_acceptance/S00/ and reviews/S00/ artifacts
 core.hooksPath     .githooks
 working tree       clean; production_tree_dirty() reports []

@@ -1,3 +1,4 @@
+.dockerignore
 .githooks/pre-commit
 .githooks/pre-push
 .github/workflows/ci.yml
