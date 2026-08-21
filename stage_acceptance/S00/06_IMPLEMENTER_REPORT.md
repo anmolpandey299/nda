@@ -545,8 +545,8 @@ this commit alone [AUTH: 01 §33, §46; plan §5.2, C-03 closure].
 ```text
 branch             stage/s00   (main and experiment-frozen do not exist yet; they are created
                                 at acceptance and are protected [AUTH: 01 §27])
-candidate commit   88ab18e7dd60cdc8dc706507bfdebc4444f6b6af
-                   "S00-B: separate runtime evidence from immutable source"
+candidate commit   c99e37d8bc5b7fd9c626ac742cedd58c37c0a2c7
+                   "S00-B: run bundle verification after readiness"
 history            f7e6ee0 bootstrap
                    aaac605 acceptance bundle + AI-stack provenance
                    e481543 report / manifest refresh
@@ -556,7 +556,8 @@ history            f7e6ee0 bootstrap
                    9a1bcde S00-B linux/amd64 build repair
                    d4dac4f S00-B host-venv contamination repair
                    22e6b06 S00-B environment-capture repair
-                   88ab18e S00-B closure/runtime-evidence repair <- candidate
+                   88ab18e S00-B closure/runtime-evidence repair
+                   c99e37d S00-B ordering + GPU evidence repair  <- candidate
 bundle commit      HEAD, carrying only stage_acceptance/S00/ and reviews/S00/ artifacts
 core.hooksPath     .githooks
 working tree       clean; production_tree_dirty() reports []
