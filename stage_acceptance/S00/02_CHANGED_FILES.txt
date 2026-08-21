@@ -27,7 +27,6 @@ manifests/data/.gitkeep
 manifests/environments/.gitkeep
 manifests/environments/AI_ENGINEERING_STACK_S00.json
 manifests/environments/S00B_HARDWARE_PROBE.json
-manifests/environments/S00B_IMAGE_RECORD.json
 manifests/models/.gitkeep
 manifests/runs/.gitkeep
 pyproject.toml
@@ -114,6 +113,7 @@ tests/unit/__init__.py
 tests/unit/test_s00_final_fixes.py
 tests/unit/test_s00_invariants.py
 tests/unit/test_s00b_env_capture.py
+tests/unit/test_s00b_hostile.py
 tests/unit/test_s00b_reconciled.py
 tests/unit/test_s00b_science_image.py
 uv.lock

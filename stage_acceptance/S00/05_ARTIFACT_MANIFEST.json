@@ -1,6 +1,6 @@
 {
   "authority": "01 \u00a716, \u00a726(13), \u00a745",
-  "described_commit": "bc5da88675c0e5f70fb5fee8d94ed83c8385f83a",
+  "described_commit": "1dd5b1aa1c301b1bb750b6eb19b51963012e01fd",
   "note": "source_artifacts are hash-bound: any change is source drift. runtime_evidence is produced by execution (preflight step 8, H100 capture, the image build), so it is recorded with its hash at bundle time but verified by re-derivation, not by hash equality; otherwise a correct S00-B run would invalidate its own bundle.",
   "runtime_evidence": {
     "artifacts/p0_pre/P0_PRE_READINESS.json": "0979b9c3c62cff91f381032c86a408b5c54cdcbc46a56c0e1a898e1d953cd202"
@@ -12,7 +12,7 @@
     "stage_acceptance/S00/02_DIFF.patch",
     "stage_acceptance/S00/05_ARTIFACT_MANIFEST.json"
   ],
-  "source_artifact_count": 114,
+  "source_artifact_count": 115,
   "source_artifacts": {
     ".dockerignore": "931f9ee8689f46e2b8150eabddca668de917cc3a1a89fa3445b88e1ad37ad5e6",
     ".githooks/pre-commit": "7be8ead6c117646e5ea72a302388764d7e1f4eb066c60b42974eaa2a56823d15",
@@ -50,7 +50,7 @@
     "reviews/S00/ARCHITECT_FINDING_RESPONSES.md": "4bac1650ff3eb88e04f9d53676332df4cb1241bcba7ceddafbc8bf07aa4afe6d",
     "reviews/S00/CLAUDE_REVIEW.md": "eb0187504e2d1dbacb938d9854c1535342a5c34e24e686614e78634cd7c823fa",
     "reviews/S00/CODEX_REVIEW.md": "642405805da8ace38528d92e4c98f269ac8a3ae0d899506ba7ac31991c7c86ac",
-    "reviews/S00/STAGE_IMPLEMENTATION_REPORT.md": "802271315009800fd2bd3576d38baa97e6c0ee7fd09aa31cdd4fdbde96034209",
+    "reviews/S00/STAGE_IMPLEMENTATION_REPORT.md": "50650def0a4376cd44858721ebd4c7d88370f20891365e6691f2369f15fb2697",
     "reviews/S00/deferred.md": "a9651a5c7e9db591af1b7f9b9e483969d1e6da8afcea46d2305266128f2561b4",
     "reviews/S00/scratch/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "scripts/bootstrap_runpod_s00b.sh": "22027e72ea2c9026c20c91d05ba7a81eff792c7ab84564862eb022f1e55e8cb4",
@@ -87,11 +87,11 @@
     "stage_acceptance/S00/03A_RESOLVED_CONFIGS/resolved_environment.json": "2bc8e49ce609170e5b1c34247e10c3b5fbcf8eeb3b2a0258c0691d79f15e29d1",
     "stage_acceptance/S00/03_TEST_COMMANDS.txt": "828f584438a04a1a6b394a4e51909b68657e4e0c6027458bcabc9d74caf8080d",
     "stage_acceptance/S00/04_TEST_OUTPUTS/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "stage_acceptance/S00/04_TEST_OUTPUTS/00_format.log": "cc2249572925b496a20b0874b8f3f6577fdb8431eee03a873841c886081f9ae3",
+    "stage_acceptance/S00/04_TEST_OUTPUTS/00_format.log": "6e176144c90751418c65c2664d61352269f81c97bbc5f61d047e71ed8d757109",
     "stage_acceptance/S00/04_TEST_OUTPUTS/01_lint.log": "f97b1ddbb5321d384247285f64ed2bfae79bcf2fd9a9fd908427355e1747d90d",
-    "stage_acceptance/S00/04_TEST_OUTPUTS/02_typecheck.log": "1b475c2f9bf8c851706ce12c666dff91c2abeb521e99aa68188e47bd6e4257ee",
-    "stage_acceptance/S00/04_TEST_OUTPUTS/03_unit.log": "54c211f55253e8a14702c24a010ef462994b0a6d9989f7277f73426b4bf2ed1d",
-    "stage_acceptance/S00/04_TEST_OUTPUTS/04_integration.log": "7b13e175af09d8c1bb0e6a94aa2c1236b4c383491f69b5573600ddf3712cfa66",
+    "stage_acceptance/S00/04_TEST_OUTPUTS/02_typecheck.log": "2f0cf76694437e032549bc51cd9c19827800634257d9abdd18156d26949dec29",
+    "stage_acceptance/S00/04_TEST_OUTPUTS/03_unit.log": "c7d08b8239f4ab49a2da7c748e387053312dfc6a3d114a497055bd60cdfd699b",
+    "stage_acceptance/S00/04_TEST_OUTPUTS/04_integration.log": "366d9b5ce4297a42c4dc0b04000395649044de648c56546ef54c1af78e62433f",
     "stage_acceptance/S00/04_TEST_OUTPUTS/05_synthetic.log": "744e51b66c66bc9288e2449dd87c8004fb6b6ad9164e5d4ea7c8821416e20683",
     "stage_acceptance/S00/04_TEST_OUTPUTS/06_backend_contract.log": "8ab7446e57004325e417d9ed003989203915a07b3be431760e96595184f6424c",
     "stage_acceptance/S00/04_TEST_OUTPUTS/07_gpu_smoke.log": "aa8ab16cb6cf5996c7cf4e694890700f13ddfa319651838472dc70a077975372",
@@ -99,7 +99,8 @@
     "stage_acceptance/S00/04_TEST_OUTPUTS/09_invariants.log": "f18e17e4a47c395fdb8e8d400ab1bcce5835faabb220155ba81d55bcf363cf78",
     "stage_acceptance/S00/04_TEST_OUTPUTS/10_bundle_verify.log": "b7ebddbbe3e7a8f21b6bfcf0e31920d34030746edffd377fee99ac500726c831",
     "stage_acceptance/S00/04_TEST_OUTPUTS/11_bundle_verify_source.log": "93669c588035beb30a483fe02bf94811f4191dea2c614ab1610a469b0eb08827",
-    "stage_acceptance/S00/06_IMPLEMENTER_REPORT.md": "802271315009800fd2bd3576d38baa97e6c0ee7fd09aa31cdd4fdbde96034209",
+    "stage_acceptance/S00/04_TEST_OUTPUTS/12_hostile.log": "ce186ca06331ce3adc0646ebc0e951a7b75f15de91f0c85565721c551a227f32",
+    "stage_acceptance/S00/06_IMPLEMENTER_REPORT.md": "50650def0a4376cd44858721ebd4c7d88370f20891365e6691f2369f15fb2697",
     "stage_acceptance/S00/07_CLAUDE_REVIEW.md": "eb0187504e2d1dbacb938d9854c1535342a5c34e24e686614e78634cd7c823fa",
     "stage_acceptance/S00/08_CODEX_REVIEW.md": "642405805da8ace38528d92e4c98f269ac8a3ae0d899506ba7ac31991c7c86ac",
     "stage_acceptance/S00/09_UNRESOLVED.md": "6829cdb3105a376652ee37c19b0f0160e0e70745cbd7fad95db765fb8b054811",
