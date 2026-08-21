@@ -372,6 +372,60 @@ def _selected_environment(root: Path) -> tuple[Path | None, dict[str, object]]:
     return manifests[0], json.loads(manifests[0].read_text(encoding="utf-8"))
 
 
+#: image_record_state is an OBSERVATION-TIME repository fact, not a property of the closure
+#: record, and the official lifecycle changes it exactly once: committing the post-build image
+#: record as the closure evidence commit H turns PENDING_COMMIT into CONSISTENT. Strict
+#: equality across B -> H is therefore invalid. Exactly that one transition is permitted, and
+#: only when every stable authority still agrees [F02 adjudication].
+PERMITTED_IMAGE_STATE_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
+    {("PENDING_COMMIT", "CONSISTENT")}
+)
+
+
+def _verify_image_state_continuity(
+    root: Path,
+    record: dict[str, object],
+    env_manifest: dict[str, object],
+    build_commit: str,
+    current_state: str,
+) -> list[str]:
+    """Compare the stored image state with the recomputed one, allowing only the single
+    expected post-evidence-commit transition."""
+    stored_state = record.get("image_record_state")
+    if stored_state == current_state:
+        return []
+    if (stored_state, current_state) not in PERMITTED_IMAGE_STATE_TRANSITIONS:
+        return [
+            f"closure image_record_state {stored_state!r} != the recomputed "
+            f"{current_state!r}, and that transition is not part of the lifecycle"
+        ]
+
+    # PENDING_COMMIT -> CONSISTENT is only legitimate when the record that was committed
+    # describes exactly the image the closure was made against.
+    problems: list[str] = []
+    record_path = root / IMAGE_RECORD_REL
+    if not record_path.is_file():
+        return ["closure claims the image record was committed, but it is absent"]
+    try:
+        committed = json.loads(record_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"{IMAGE_RECORD_REL} is not valid JSON ({exc.msg})"]
+
+    baked_digest = env_manifest.get("docker_image_digest")
+    baked_commit = env_manifest.get("image_source_git_commit")
+    if committed.get("sealed_image_digest") != baked_digest:
+        problems.append("the committed image record does not describe the running image")
+    if committed.get("source_git_commit") != baked_commit:
+        problems.append("the committed image record disagrees about the image source commit")
+    if baked_commit != build_commit:
+        problems.append("the baked image source commit is not the build commit")
+    if record.get("sealed_image_digest") != baked_digest:
+        problems.append("the closure record's sealed digest is not the running image's")
+    if record.get("build_commit") != build_commit:
+        problems.append("the closure record's build commit is not the derived build commit")
+    return problems
+
+
 def verify_closure_record(root: Path, stage: str) -> list[str]:
     """Re-verify an existing closure record. Never regenerate or mutate evidence.
 
@@ -432,10 +486,10 @@ def verify_closure_record(root: Path, stage: str) -> list[str]:
         state, image_problems = image_identity_state(root, env_manifest, authoritative_b)
         if state not in ACCEPTED_IMAGE_STATES:
             problems.extend(image_problems)
-        if record.get("image_record_state") != state:
-            problems.append(
-                f"closure image_record_state {record.get('image_record_state')!r} != the "
-                f"recomputed {state!r}"
+            problems.append(f"image identity state is {state}")
+        else:
+            problems.extend(
+                _verify_image_state_continuity(root, record, env_manifest, authoritative_b, state)
             )
 
     if record.get("s00b_complete"):

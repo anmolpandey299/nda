@@ -1194,12 +1194,16 @@ def test_f02_fresh_clone_at_h_verifies_and_holds_every_artifact(tmp_path: Path) 
     """A clone of the closure commit must contain everything the three verifiers need."""
     repo, science, build = _lifecycle_repo(tmp_path)
     _run_hardware(repo, build)
-    # build_science_image.sh writes this on the build host; the runbook commits it at H.
+    # ORDER MATTERS. Closure happens at B, where no image record exists yet, so the state is
+    # PENDING_COMMIT. The record is written by the build host and committed at H, which is
+    # exactly what turns the state into CONSISTENT. An earlier fixture wrote the record
+    # first and so never exercised the transition [F02 adjudication].
+    closure = _write_closure(repo)
+    assert closure["image_record_state"] == "PENDING_COMMIT"
     (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
         json.dumps({"sealed_image_digest": DIGEST_A, "source_git_commit": build}),
         encoding="utf-8",
     )
-    _write_closure(repo)
     _git(repo, "add", "-A")
     _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "closure evidence")
 
@@ -1270,3 +1274,136 @@ def test_f03_forged_gpu_summary_is_rejected(tmp_path: Path) -> None:
 def test_f03_unmodified_closure_record_passes(tmp_path: Path) -> None:
     repo, _record = _closed_repo(tmp_path)
     assert build_bundle.verify_closure_record(repo, "S00") == []
+
+
+# ------------------------------------------------- F02 adjudication: the one transition
+def _closed_at_b_then_record_committed(tmp_path: Path) -> tuple[Path, str, str]:
+    """The official lifecycle: closure at B with PENDING_COMMIT, then the post-build image
+    record committed as H, which is what makes the state CONSISTENT."""
+    repo, science, build = _lifecycle_repo(tmp_path)
+    _run_hardware(repo, build)
+    closure = _write_closure(repo)
+    assert closure["image_record_state"] == "PENDING_COMMIT"
+    assert closure["s00b_complete"] is True, build_bundle.closure_problems(closure)
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
+        json.dumps({"sealed_image_digest": DIGEST_A, "source_git_commit": build}),
+        encoding="utf-8",
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "closure evidence")
+    return repo, science, build
+
+
+def test_f02_pending_commit_to_consistent_is_accepted_in_a_fresh_clone(
+    tmp_path: Path,
+) -> None:
+    """The adjudicated counterexample: it must now verify end to end at H."""
+    repo, science, build = _closed_at_b_then_record_committed(tmp_path)
+    clone = tmp_path / "clone"
+    _run(["git", "clone", "-q", str(repo), str(clone)], tmp_path)
+
+    _, env_manifest = build_bundle._selected_environment(clone)
+    state, _ = build_bundle.image_identity_state(
+        clone, env_manifest, build_bundle.bundle_build_commit(clone, "S00")
+    )
+    assert build_bundle.described_commit(clone, "S00") == science
+    assert build_bundle.bundle_build_commit(clone, "S00") == build
+    assert state == "CONSISTENT"
+    assert build_bundle.verify_source(clone, "S00") == []
+    assert build_bundle.verify_runtime(clone, "S00") == []
+    assert build_bundle.verify_closure_record(clone, "S00") == []
+    assert build_bundle.verify(clone, "S00") == []
+
+
+def test_f02_transition_rejected_when_committed_record_has_the_wrong_build_commit(
+    tmp_path: Path,
+) -> None:
+    repo, science, _build = _closed_at_b_then_record_committed(tmp_path)
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
+        json.dumps({"sealed_image_digest": DIGEST_A, "source_git_commit": science}),
+        encoding="utf-8",
+    )
+    problems = build_bundle.verify_closure_record(repo, "S00")
+    assert problems, "a record naming the wrong build commit was accepted"
+
+
+def test_f02_transition_rejected_when_committed_record_has_the_wrong_digest(
+    tmp_path: Path,
+) -> None:
+    repo, _science, build = _closed_at_b_then_record_committed(tmp_path)
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
+        json.dumps({"sealed_image_digest": DIGEST_B, "source_git_commit": build}),
+        encoding="utf-8",
+    )
+    problems = build_bundle.verify_closure_record(repo, "S00")
+    assert problems, "a record describing a different image was accepted"
+
+
+def test_f02_transition_rejected_when_environment_identity_differs(tmp_path: Path) -> None:
+    repo, _science, _build = _closed_at_b_then_record_committed(tmp_path)
+    path = repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged["environment_lock_sha256"] = "e" * 64
+    path.write_text(json.dumps(forged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    problems = build_bundle.verify_closure_record(repo, "S00")
+    assert any("environment identity" in p for p in problems), problems
+
+
+def test_f02_transition_rejected_when_current_state_is_pending_rebuild(
+    tmp_path: Path,
+) -> None:
+    repo, _science, build = _closed_at_b_then_record_committed(tmp_path)
+    manifest_path, env = build_bundle._selected_environment(repo)
+    assert manifest_path is not None
+    env["image_source_git_commit"] = "0" * 39 + "1"
+    manifest_path.write_text(json.dumps(env, indent=2, sort_keys=True), encoding="utf-8")
+    state, _ = build_bundle.image_identity_state(repo, env, build)
+    assert state == "TAMPERED"
+    assert build_bundle.verify_closure_record(repo, "S00")
+
+
+def test_f02_transition_rejected_when_current_state_is_conflicting(tmp_path: Path) -> None:
+    repo, _science, build = _closed_at_b_then_record_committed(tmp_path)
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
+        json.dumps({"sealed_image_digest": DIGEST_B, "source_git_commit": build}),
+        encoding="utf-8",
+    )
+    _, env = build_bundle._selected_environment(repo)
+    state, _ = build_bundle.image_identity_state(repo, env, build)
+    assert state == "CONFLICTING"
+    problems = build_bundle.verify_closure_record(repo, "S00")
+    assert any("image identity state is CONFLICTING" in p for p in problems), problems
+
+
+@pytest.mark.parametrize(
+    ("stored", "current"),
+    [
+        ("CONSISTENT", "PENDING_COMMIT"),
+        ("PENDING_REBUILD", "CONSISTENT"),
+        ("CONFLICTING", "CONSISTENT"),
+        ("TAMPERED", "CONSISTENT"),
+        ("PENDING_COMMIT", "PENDING_REBUILD"),
+    ],
+)
+def test_f02_only_one_transition_is_permitted(stored: str, current: str) -> None:
+    """The exception must not become "any accepted state may replace any other"."""
+    assert (stored, current) not in build_bundle.PERMITTED_IMAGE_STATE_TRANSITIONS
+
+
+def test_f02_permitted_transition_set_is_exactly_one(tmp_path: Path) -> None:
+    assert build_bundle.PERMITTED_IMAGE_STATE_TRANSITIONS == frozenset(
+        {("PENDING_COMMIT", "CONSISTENT")}
+    )
+
+
+def test_f02_reverse_transition_is_rejected(tmp_path: Path) -> None:
+    repo, _science, build = _closed_at_b_then_record_committed(tmp_path)
+    path = repo / "stage_acceptance" / "S00" / "12_S00B_CLOSURE.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged["image_record_state"] = "CONSISTENT"
+    path.write_text(json.dumps(forged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").unlink()
+    _, env = build_bundle._selected_environment(repo)
+    assert build_bundle.image_identity_state(repo, env, build)[0] == "PENDING_COMMIT"
+    problems = build_bundle.verify_closure_record(repo, "S00")
+    assert any("not part of the lifecycle" in p for p in problems), problems

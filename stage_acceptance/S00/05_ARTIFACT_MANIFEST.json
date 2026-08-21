@@ -1,6 +1,6 @@
 {
   "authority": "01 \u00a716, \u00a726(13), \u00a745",
-  "described_commit": "9e7552469fff17bb39bc5e63d9f9d18e68e731fd",
+  "described_commit": "dde88eae62563ee3516fb487dbf01d5ac1c5399d",
   "note": "source_artifacts are hash-bound: any change is source drift. runtime_evidence is produced by execution (preflight step 8, H100 capture, the image build), so it is recorded with its hash at bundle time but verified by re-derivation, not by hash equality; otherwise a correct S00-B run would invalidate its own bundle.",
   "runtime_evidence": {
     "artifacts/p0_pre/P0_PRE_READINESS.json": "0979b9c3c62cff91f381032c86a408b5c54cdcbc46a56c0e1a898e1d953cd202"
@@ -54,7 +54,7 @@
     "reviews/S00/deferred.md": "a9651a5c7e9db591af1b7f9b9e483969d1e6da8afcea46d2305266128f2561b4",
     "reviews/S00/scratch/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "scripts/bootstrap_runpod_s00b.sh": "f42c2e0e56d758f5e3e36d74a9d05c0e65f8a4caad81092bbc501d1c4c09025e",
-    "scripts/build_bundle.py": "03deb9c03a39f84cadccd409ddda1eb3cd1b189fcc0c74a40886124039f40943",
+    "scripts/build_bundle.py": "ed9de041c8f47b0a8a21d1d6a2d7ef029b86a86b687d963ce350d89de466db43",
     "scripts/build_science_image.sh": "7b06b4d33465e41217e82e9aba6ad7b7650f0d8fdf9b04275340acc454337278",
     "scripts/capture_environment.py": "ae82de12345a8c9df30cff9788283eae549c10e4a7a2415c20bb23a5dbbc9677",
     "scripts/capture_environment.sh": "ffa91f742f693c39a9d4d2e06b74363df311086a871910b4fdb20ec9d1dd3ffc",
@@ -118,7 +118,7 @@
     "tests/gpu_smoke/test_cuda_torch_contract.py": "45418205d68f97df3f7e4df4148849fb76dd8fab96037ca11c331e61a51a3503",
     "tests/gpu_smoke/test_env_capture_contract.py": "f027cc3aedd27285201ca20f360d01a2a4a257b0530706804952959fb02b755a",
     "tests/integration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "tests/integration/test_s00_command_surface.py": "e5113cc5de4ee46456973bbefebb1763489b1e3525e414712608871201bdbb53",
+    "tests/integration/test_s00_command_surface.py": "37a6665d30cb50c9f471faa9796516af40a19e2594c4db8aa519621a8a9ff17d",
     "tests/synthetic/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/synthetic/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/unit/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

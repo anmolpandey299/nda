@@ -673,6 +673,33 @@ entry. A fresh clone containing those artifacts can run `verify_source`, `verify
 `verify_closure_record`, which a clone fixture exercises end to end.
 
 
+## 3K. F02 mechanical adjudication — the one permitted transition
+
+Adjudicated at science `9e7552469fff17bb39bc5e63d9f9d18e68e731fd`, build `dde88eae62563ee3516fb487dbf01d5ac1c5399d`. Reviewer A's counterexample reproduced exactly in a
+disposable clone.
+
+`image_record_state` is an OBSERVATION-TIME repository fact, not a property of the closure
+record, and the official lifecycle changes it exactly once: closure happens at B where no
+image record exists yet (`PENDING_COMMIT`), and committing the post-build record as the
+closure evidence commit H is precisely what makes it `CONSISTENT`. Requiring strict equality
+across B to H therefore invalidated the closure record by way of the very commit the runbook
+instructs.
+
+The fix is one conditional in `verify_closure_record`. The recomputed state must still be an
+accepted state; equality is still required in every ordinary case; and exactly one transition,
+`PENDING_COMMIT -> CONSISTENT`, is permitted, only when the committed record describes the
+running image, agrees with the baked source commit, and the baked source commit is the build
+commit. `PERMITTED_IMAGE_STATE_TRANSITIONS` is a frozenset containing that single pair, so the
+exception cannot widen into "any accepted state may replace any other".
+
+### Why the suite missed it
+
+The fresh-clone fixture wrote `S00B_IMAGE_RECORD.json` *before* generating the closure record,
+so the state was already `CONSISTENT` at closure time and the transition was never exercised.
+The fixture now follows the real order — closure at B, record committed at H — which is what
+reproduces the defect and now proves the fix.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.
