@@ -159,7 +159,11 @@ this commit alone [AUTH: 01 §33, §46; plan §5.2, C-03 closure].
 ```text
 branch      stage/s00           (main and experiment-frozen do not exist yet; they are
                                  created at acceptance and are protected [AUTH: 01 §27])
-root commit f7e6ee0eadfb9550a1c5a1f74a0029960baedcf5   "S00: repository bootstrap"
+commits     f7e6ee0eadfb9550a1c5a1f74a0029960baedcf5  "S00: repository bootstrap" (root)
+            aaac605d51ce04614f76a4b846367f6eef26893c  "S00: acceptance bundle, report,
+                                                       AI-stack provenance"
+            this report and the refreshed artifact manifest are recorded in the commit that
+            follows aaac605, because a manifest cannot hash the commit containing it
 core.hooksPath  .githooks
 working tree    clean at hand-off; production_tree_dirty() reports []
 ```
