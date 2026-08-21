@@ -1,0 +1,32 @@
+{
+  "BACKEND_INTEGRATED": false,
+  "P0_PRE_READY": false,
+  "SUITE_SCOPE": "STATISTICAL_STACK_ONLY",
+  "authority": "02 \u00a7C6; 00 \u00a735, \u00a734C.1",
+  "computed_by": "DECLARED_AT_S00",
+  "environment_lock_sha256": "TBD_REQUIRES_HARDWARE",
+  "evidence": {
+    "backend_contract": {
+      "status": "NOT_RUN(BACKEND_NOT_INTEGRATED)"
+    },
+    "benchmark_1000_seq": {
+      "status": "NOT_RUN"
+    },
+    "cache_assertions": {
+      "status": "NOT_RUN(EMPTY_AT_S00)"
+    },
+    "gpu_smoke": {
+      "status": "NOT_RUN(NO_GPU)"
+    },
+    "synthetic_suite": {
+      "status": "NOT_RUN(EMPTY_AT_S00)"
+    }
+  },
+  "software_gate": {
+    "ANALYSIS_DRY_RUN": "NOT_RUN",
+    "CACHE_ASSERTIONS": "NOT_RUN",
+    "CROSSFIT_NEGATIVE_CONTROL": "NOT_RUN",
+    "P0_00_COMPUTE_BUDGET": "NOT_RUN",
+    "SCORER_ENGINE": "NOT_RUN"
+  }
+}

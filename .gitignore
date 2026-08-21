@@ -1,0 +1,14 @@
+# Working-tree noise only. Nothing evidentiary is ignored: run directories, manifests,
+# results and logs are tracked so failed runs and their manifests are preserved
+# [AUTH: 01 §27 "preserve failed experimental runs and their manifests", §36].
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+# Content-addressed model forward outputs are regenerable and large; the cache is keyed by
+# ENVIRONMENT_LOCK_SHA256 + SCORING_CODE_HASH so it is never evidence [AUTH: 00 §34A.4; 02 §C7].
+artifacts/cache/*
+!artifacts/cache/.gitkeep

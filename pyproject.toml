@@ -1,0 +1,67 @@
+# Environment lock, phase S00-A (CPU/dev). [AUTH: 01 §11, §12, §33, §39 S00; STAGE_PLAN §5.2]
+#
+# `requires-python` is FROZEN here and the CPU/dev set is locked in uv.lock, so
+# `make lint`, `make typecheck` and `make unit` are reproducible from this commit alone.
+# The CUDA-coupled set (PyTorch + CUDA build, CUDA runtime/driver, Transformers, PEFT,
+# Accelerate, DP library) is deliberately absent: it is resolved on the real H100 image at
+# S00-B and is the only part carrying TBD_REQUIRES_HARDWARE [AUTH: 03 §8; STAGE_PLAN §5.7].
+
+[project]
+name = "privacy-model-merging"
+version = "0.0.0"
+description = "Privacy leakage / recoverability in ordinary model-merge release families"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+[project.optional-dependencies]
+# S00-A CPU/dev set — locked now [AUTH: STAGE_PLAN §5.2].
+cpu-dev = [
+  "ruff",
+  "mypy",
+  "pytest",
+  "numpy",
+  "scipy",
+  "scikit-learn",
+  "pandas",
+  "safetensors",
+  "tokenizers",
+  "matplotlib",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Packaging discovery is restricted to src/ so nothing under reviews/ can become
+# production source by import [AUTH: 03 §9; STAGE_PLAN I3].
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["specs", "reviews", "stage_acceptance"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = "scripts"
+files = ["src", "scripts", "tests"]
+strict = true
+warn_unused_configs = true
+exclude = "(^|/)(specs|reviews|stage_acceptance)/"
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "unit: pure functions and mathematical identities [AUTH: 01 §22]",
+  "integration: multiple modules with tiny fixtures, no network [AUTH: 01 §22]",
+  "synthetic: planted-truth scenarios DRY-A..H, DRY-CACHE [AUTH: 01 §22; 00 §34B]",
+  "golden: frozen expected outputs for fixed inputs [AUTH: 01 §22]",
+  "backend_contract: production HF/PEFT backend contract [AUTH: 02 §C6]",
+  "gpu_smoke: real model/library/runtime compatibility on H100 [AUTH: 01 §21]",
+]

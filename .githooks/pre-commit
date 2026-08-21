@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Convenience guard only — bypassable with --no-verify [AUTH: 03 §9; plan I9].
+set -euo pipefail
+# symbolic-ref works on an unborn branch; rev-parse does not [initial commit case].
+BRANCH="$(git symbolic-ref --short -q HEAD || echo DETACHED)"
+if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "experiment-frozen" ]; then
+  echo "pre-commit: '$BRANCH' is protected; work on stage/<stage-id> [AUTH: 01 §27]" >&2
+  exit 1
+fi
+STAGED="$(git diff --cached --name-only --diff-filter=ACM)"
+if echo "$STAGED" | grep -E '^reviews/.*\.py$' | grep -qv '/scratch/'; then
+  echo "pre-commit: importable code under reviews/ outside scratch/ [AUTH: 03 §9]" >&2
+  exit 1
+fi
+PY="$( [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3 )"
+CHANGED_PY="$(echo "$STAGED" | grep -E '\.py$' || true)"
+if [ -n "$CHANGED_PY" ]; then
+  if $PY -c 'import ruff' >/dev/null 2>&1 || $PY -m ruff --version >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
+    $PY -m ruff format --check $CHANGED_PY && $PY -m ruff check $CHANGED_PY
+  else
+    # A convenience guard must not block a fresh clone that has no toolchain. The
+    # authority gate is `make preflight` in CI [AUTH: 01 §33; 03 §9].
+    echo "pre-commit: ruff unavailable, skipping format/lint; run 'make preflight'" >&2
+  fi
+fi

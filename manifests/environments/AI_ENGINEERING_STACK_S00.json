@@ -1,0 +1,45 @@
+{
+  "authority": "01 \u00a72.1 (Claude, at S00), 01 \u00a74 (Codex, at first review), 01 \u00a737, 01 \u00a748",
+  "claude": {
+    "claude_code_client_version": "2.1.238",
+    "datetime_utc": "2026-08-21T02:00:56Z",
+    "exact_exposed_model_name": "claude-opus-5[1m]",
+    "permission_mode": "auto",
+    "repository_commit": "PENDING_RECORDED_IN_FOLLOWING_COMMIT",
+    "sessions": {
+      "architect": {
+        "output": "stage_acceptance/S00/01_PLAN.md",
+        "role": "ARCHITECT"
+      },
+      "blind_reviewer": {
+        "output": "reviews/S00/CLAUDE_REVIEW.md",
+        "review_output_received_utc": "2026-08-21T01:35:26.878031+00:00",
+        "review_output_sha256": "eb0187504e2d1dbacb938d9854c1535342a5c34e24e686614e78634cd7c823fa",
+        "role": "CLAUDE BLIND REVIEW [AUTH: 03 \u00a73]"
+      },
+      "implementer": {
+        "output": "reviews/S00/STAGE_IMPLEMENTATION_REPORT.md",
+        "role": "IMPLEMENTER [AUTH: 01 \u00a73.2]"
+      }
+    }
+  },
+  "codex": {
+    "client_version": "UNAVAILABLE_NOT_EXPOSED",
+    "codex_client_product": "OpenAI Codex",
+    "exact_model_name": "UNAVAILABLE_NOT_EXPOSED",
+    "prompt_sha256": "UNAVAILABLE_NOT_EXPOSED",
+    "repository_commit": "UNAVAILABLE_NOT_EXPOSED",
+    "repository_commit_note": "The repository was not a Git worktree when the S00 blind review ran, so no reviewed revision existed to record. This is finding S00-CBR-001, closed FIX by the plan's \u00a78.1 pinned-worktree precondition; the blind review is rerun against the pinned commit.",
+    "review_datetime_utc": "UNAVAILABLE_NOT_EXPOSED",
+    "review_output_path": "reviews/S00/CODEX_REVIEW.md",
+    "review_output_received_utc": "2026-08-21T01:35:51.480330+00:00",
+    "review_output_sha256": "642405805da8ace38528d92e4c98f269ac8a3ae0d899506ba7ac31991c7c86ac"
+  },
+  "note": "Any field the product does not expose is recorded as UNAVAILABLE_NOT_EXPOSED rather than invented [AUTH: 01 \u00a74].",
+  "recorded_utc": "2026-08-21T02:02:35.864877+00:00",
+  "roles": {
+    "chatgpt": "ACCEPTANCE ADJUDICATOR [AUTH: 01 \u00a75, \u00a748]",
+    "claude_code": "ARCHITECT + IMPLEMENTER + first adversarial reviewer [AUTH: 01 \u00a72.1, \u00a748]",
+    "codex": "INDEPENDENT CODE / REPRODUCIBILITY REVIEWER, review-only [AUTH: 01 \u00a74, \u00a748]"
+  }
+}

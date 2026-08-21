@@ -1,0 +1,28 @@
+# CI skeleton [AUTH: 01 §39 S00]. CI runs the CPU gate and nothing else.
+#
+# No GPU runner and no backend-contract invocation: H100 compute is reserved for scientific
+# execution [AUTH: 01 §6.1, §49] and a CI pass must never be mistakable for backend or
+# hardware evidence [AUTH: 02 §C6].
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync the frozen CPU/dev environment
+        run: uv sync --extra cpu-dev
+      - name: Ordered gate + readiness evaluation
+        run: make preflight
+      - name: Publish readiness state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-pre-readiness
+          path: artifacts/p0_pre/P0_PRE_READINESS.json

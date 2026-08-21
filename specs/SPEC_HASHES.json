@@ -1,0 +1,18 @@
+{
+  "00_MEASUREMENT_SPEC_v1.9_FINAL_CLOSED.md": {
+    "role": "SCIENTIFIC",
+    "sha256": "eb7ab9136279d9a3c189c635d34fbd3a84f8b370640d640da53bdbbe330e9deb"
+  },
+  "01_EXECUTION_STACK_LOCK_v2.md": {
+    "role": "ENGINEERING",
+    "sha256": "82a9a93c0e1ad05fd5e64958f7daa75e6dbe99b23fb1b65ff750e6451fb8abc5"
+  },
+  "02_PRE_EXECUTION_IMPLEMENTATION_CORRECTIONS.md": {
+    "role": "CLARIFICATION",
+    "sha256": "1ecba4e6b0a9c5fb60ace3ba85335b803fe72d7b0b639b0dfb80dacaf2952cb6"
+  },
+  "03_REVIEW_GOVERNANCE_LOCK.md": {
+    "role": "REVIEW",
+    "sha256": "7bf2048067d09a2b72333f381c07bb4863baae3fd70f03e153e07af5d99691bc"
+  }
+}

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Convenience guard only — bypassable with --no-verify [AUTH: 03 §9; plan I9].
+set -euo pipefail
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/experiment-frozen)
+      echo "pre-push: '$remote_ref' is protected [AUTH: 01 §27]" >&2
+      echo "server-side branch protection is the authority mechanism, not this hook" >&2
+      exit 1 ;;
+  esac
+done
