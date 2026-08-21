@@ -1,6 +1,6 @@
 {
   "authority": "01 \u00a716, \u00a726(13), \u00a745",
-  "described_commit": "ecaaaf6d6ac68c50d7ab97aa7312fbbeb14f31d1",
+  "described_commit": "19ad7b9570482a6709b820eac3a298b372602f38",
   "environment_lock_sha256": "TBD_REQUIRES_HARDWARE",
   "file_count": 109,
   "files": {
@@ -13,7 +13,7 @@
     "02_PRE_EXECUTION_IMPLEMENTATION_CORRECTIONS.md": "1ecba4e6b0a9c5fb60ace3ba85335b803fe72d7b0b639b0dfb80dacaf2952cb6",
     "03_REVIEW_GOVERNANCE_LOCK.md": "7bf2048067d09a2b72333f381c07bb4863baae3fd70f03e153e07af5d99691bc",
     "CLAUDE.md": "8a088e429079828d2377c20aeee54e3ca6a6a8694dae94df7e4436ecf4ed5e85",
-    "Dockerfile": "3a21d7c1a4cd54a521f85d6552dbdea0b71669cf5b53034840e067fbc35be567",
+    "Dockerfile": "e6dff9a385646b3049e806c47fbff63f57768b9cd41d55355170c65547aff781",
     "Makefile": "fa17dd87a5d44d43d2e89d46269e1372182c5e30101746631fb7173be4921ca1",
     "README.md": "7494d330a09d1fce1cc67f600c47834d4203282d8beff6e6f937d5a3ee587601",
     "artifacts/cache/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
