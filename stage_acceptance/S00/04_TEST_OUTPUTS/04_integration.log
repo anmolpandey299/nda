@@ -1,4 +1,4 @@
 # make integration
 .venv/bin/python -m pytest tests/integration
-............................................                             [100%]
-44 passed in 4.73s
+.........................................................                [100%]
+57 passed in 8.47s

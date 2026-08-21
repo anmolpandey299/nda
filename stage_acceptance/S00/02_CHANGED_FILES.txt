@@ -114,5 +114,6 @@ tests/unit/__init__.py
 tests/unit/test_s00_final_fixes.py
 tests/unit/test_s00_invariants.py
 tests/unit/test_s00b_env_capture.py
+tests/unit/test_s00b_reconciled.py
 tests/unit/test_s00b_science_image.py
 uv.lock
