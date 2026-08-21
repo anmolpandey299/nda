@@ -5,7 +5,8 @@
     "datetime_utc": "2026-08-21T02:00:56Z",
     "exact_exposed_model_name": "claude-opus-5[1m]",
     "permission_mode": "auto",
-    "repository_commit": "PENDING_RECORDED_IN_FOLLOWING_COMMIT",
+    "repository_commit": "f7e6ee0eadfb9550a1c5a1f74a0029960baedcf5",
+    "repository_commit_note": "SHA of the S00 bootstrap commit, i.e. the parent of the commit that records it.",
     "sessions": {
       "architect": {
         "output": "stage_acceptance/S00/01_PLAN.md",

@@ -1,0 +1,2 @@
+# make gpu-smoke
+gpu-smoke: NOT_RUN(NO_GPU) [AUTH: 01 §21; 03 §8]

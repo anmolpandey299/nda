@@ -1,0 +1,12 @@
+# Exact commands, in the 01 §22 order. Reproduce from a clean clone with 10_REPRODUCE.md.
+uv sync --extra cpu-dev
+python scripts/check_repo_invariants.py     # preflight step 0
+make format CHECK=1                          # 01 §33
+make lint                                    # 01 §33
+make typecheck                               # 01 §33
+make unit                                    # 01 §22 Unit
+make integration                             # 01 §22 Integration
+make synthetic                               # 01 §22 Synthetic/golden
+make backend-contract                        # 02 §C6 — NOT_RUN at S00
+make gpu-smoke                               # 01 §21  — NOT_RUN at S00
+make preflight                               # ordered gate + readiness, plan §10.1

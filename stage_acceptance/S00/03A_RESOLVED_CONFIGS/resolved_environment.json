@@ -1,0 +1,13 @@
+{
+  "authority": "01 \u00a712(1)-(5), \u00a717, \u00a726(8)",
+  "environment_lock_sha256": "TBD_REQUIRES_HARDWARE",
+  "note": "S00-A resolved environment. The S00-B H100 relock supersedes this for science.",
+  "pyproject.toml": {
+    "sha256": "2ee247a4d45ed9c0a330a076ea477d11d3c308ea0ec1d9e7d72a7b4f5715486c"
+  },
+  "requires_python": ">=3.13,<3.14",
+  "resolved_on": "CPU/dev lane",
+  "uv.lock": {
+    "sha256": "79dd47d665b3e55984e342028748d979078637279119538c1ecb537371ff82cb"
+  }
+}

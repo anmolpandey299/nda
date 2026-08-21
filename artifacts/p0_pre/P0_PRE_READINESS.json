@@ -3,7 +3,7 @@
   "P0_PRE_READY": false,
   "SUITE_SCOPE": "STATISTICAL_STACK_ONLY",
   "authority": "02 \u00a7C6; 00 \u00a735, \u00a734C.1",
-  "computed_by": "DECLARED_AT_S00",
+  "computed_by": "PREFLIGHT_STEP_8",
   "environment_lock_sha256": "TBD_REQUIRES_HARDWARE",
   "evidence": {
     "backend_contract": {

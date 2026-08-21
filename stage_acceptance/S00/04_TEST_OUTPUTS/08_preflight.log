@@ -1,0 +1,13 @@
+# make preflight
+.venv/bin/python scripts/preflight.py --root .
+preflight: RUN_ID inputs frozen at 8 [AUTH: 01 §15]
+  step 0 ok   repo-invariants
+  step 1 ok   format
+  step 2 ok   lint
+  step 3 ok   typecheck
+  step 4 ok   unit
+  step 5 ok   integration
+  step 6 ok   synthetic
+  step 7 ok   verify-evidence
+  step 8 ok   write-readiness
+preflight PASS
