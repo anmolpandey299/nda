@@ -493,6 +493,76 @@ stale source bundles still fail. `b7356e1c…` and the earlier `aa64d5f2…` are
 specific H100 environments and are hardcoded nowhere — a test enforces it for both.
 
 
+## 3H. Reconciled repair — SHA hygiene, commit semantics, fail-closed GPU evidence
+
+### BLOCKER 1 — a fabricated SHA
+
+I reported a full bundle SHA that I produced by expanding an abbreviated prefix by hand. It
+names no object; `git cat-file -e` refuses it. The real commits, obtained with `git rev-parse`:
+
+```text
+science candidate  c99e37d8bc5b7fd9c626ac742cedd58c37c0a2c7
+bundle / build     0e6f16f291b2567fc538625016f7a61bb6ce5423
+```
+
+Every SHA in this report and in the S00-B documentation is now taken from `git rev-parse`.
+The bootstrap refuses any argument that is not a full 40-hex SHA naming a real commit, and a
+test asserts the fabricated string appears nowhere in the repository.
+
+### BLOCKER 2 — candidate vs build commit
+
+The acceptance bundle describes the scientific candidate, but the bundle lives in the commit
+*after* it. The image must therefore be built from the bundle commit, or it ships no bundle
+and in-pod verification is impossible.
+
+```text
+DESCRIBED_COMMIT           scientific candidate
+BUILD_COMMIT               bundle commit; the image is built from this
+IMAGE_SOURCE_GIT_COMMIT    baked into /etc/pmm-image.json == BUILD_COMMIT
+BOOTSTRAP_REQUIRED_COMMIT  == BUILD_COMMIT
+```
+
+The bootstrap argument is now named `BUILD_COMMIT`, `build_science_image.sh` prints the exact
+bootstrap command for the commit it built, and the documentation states that bootstrapping
+the candidate is wrong.
+
+### BLOCKER 3 — GPU evidence was fail-open
+
+Every reproduction the reviewers reported was real. The lane recorded PASS from a text
+summary and a zero exit code, so skips counted as success, a recorder failure could be
+masked by a later shell command, and a previous PASS survived a failed rerun.
+
+The decision now lives in one place and every condition fails closed. Before each attempt the
+previous record is invalidated. PASS is written only when pytest exited zero, a junit report
+parses, the collected count meets the lane's declared test count, failures and errors are
+zero, **skips are zero**, the environment identity is resolved, and the atomic write
+succeeded. The recorder's exit code is the Make target's exit code, so a recorder failure
+fails the lane.
+
+S00-B closure now requires a `gpu_smoke` PASS bound to the *current* environment identity.
+This is deliberately separate from P0 evidence eligibility: the same record is still
+`NON_EVIDENTIARY` for readiness because no S01 RUN_ID exists, so
+`BACKEND_INTEGRATED = false`, `SUITE_SCOPE = STATISTICAL_STACK_ONLY` and
+`P0_PRE_READY = false` are unchanged, which is correct at S00.
+
+### MAJOR 1 — image identity binding without a cycle
+
+`S00B_IMAGE_RECORD.json` is produced by the build, so it cannot exist inside the commit that
+produced the image. The authoritative identity is the one baked into `/etc/pmm-image.json`,
+which capture copies into the environment manifest from inside the image and which no caller
+can supply. Closure binds described commit, build commit, baked source commit, sealed digest,
+environment manifest, GPU PASS, readiness and the produced-artifact hashes, and classifies the
+record as `CONSISTENT`, `PENDING_COMMIT`, `PENDING_REBUILD` or `TAMPERED`. The last two fail
+closure. `PENDING_COMMIT` is the expected pod-time state and is closed by the closure commit,
+which is why there is no rebuild loop.
+
+### MINOR 1-3
+
+Untracked source files now count as source drift, so a new `scripts/*.py` cannot evade
+verification. Readiness re-derivation requires the literal producer `PREFLIGHT_STEP_8` rather
+than trusting the stored value. The closure record hashes the GPU lane evidence it consumed.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.

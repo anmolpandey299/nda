@@ -25,15 +25,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from preflight import (  # noqa: E402
+    EVIDENCE_LANES_REL,
+    READINESS_PRODUCER,
     READINESS_REL,
     TBD,
     compute_readiness,
+    current_lane_pass,
     environment_lock_sha256,
     is_environment_lock_manifest,
 )
 
+IMAGE_RECORD_REL = "manifests/environments/S00B_IMAGE_RECORD.json"
+GPU_LANE = "gpu_smoke"
+
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 HEAD_SHA_RE = re.compile(r"^head git commit\s*=\s*([0-9a-f]{40})$", re.MULTILINE)
+FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SELF_REFERENTIAL = (
     "00_INDEX.md",
     "02_DIFF.patch",
@@ -91,18 +98,29 @@ def changed_files_text(root: Path, commit: str) -> str:
 
 
 def code_drift(root: Path, described: str, stage: str) -> list[str]:
-    """Source paths that changed between the described commit and HEAD.
+    """Source paths that changed between the described commit and HEAD, plus any NEW
+    untracked source file.
 
-    The stage's own bundle and review directories are excluded because they carry the
-    bundle itself, and runtime evidence is excluded because producing it is the point of
-    S00-B. Everything else changing means the bundle is stale.
+    An untracked `scripts/*.py` would otherwise evade verification entirely: it is in no
+    diff, and the manifest only hashes what it already listed. The stage's own bundle and
+    review directories are excluded because they carry the bundle, and runtime evidence is
+    excluded because producing it is the point of S00-B.
     """
-    head = git(root, "rev-parse", "HEAD").strip()
-    if described == head:
-        return []
-    names = git(root, "diff", "--name-only", described, head).split()
     allowed = (f"stage_acceptance/{stage}/", f"reviews/{stage}/")
-    return sorted(p for p in names if not p.startswith(allowed) and not is_runtime_evidence(p))
+
+    def relevant(path: str) -> bool:
+        return not path.startswith(allowed) and not is_runtime_evidence(path)
+
+    head = git(root, "rev-parse", "HEAD").strip()
+    drifted: set[str] = set()
+    if described != head:
+        drifted.update(
+            p for p in git(root, "diff", "--name-only", described, head).split() if relevant(p)
+        )
+    for path in git(root, "ls-files", "--others", "--exclude-standard").split():
+        if relevant(path) and (root / path).is_file():
+            drifted.add(f"{path} (untracked)")
+    return sorted(drifted)
 
 
 def artifact_manifest(root: Path, described: str, stage: str) -> dict[str, object]:
@@ -245,7 +263,14 @@ def _verify_runtime_evidence(root: Path, listed: dict[str, str]) -> list[str]:
             stored = json.loads(readiness_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             return problems + [f"{READINESS_REL} is not valid JSON ({exc.msg})"]
-        recomputed = compute_readiness(root, computed_by=str(stored.get("computed_by", "")))
+        producer = stored.get("computed_by")
+        if producer != READINESS_PRODUCER:
+            problems.append(
+                f"{READINESS_REL} claims producer {producer!r}; only {READINESS_PRODUCER!r}"
+                " may author it, so re-derivation cannot be steered by the stored value"
+            )
+            return problems
+        recomputed = compute_readiness(root, computed_by=READINESS_PRODUCER)
         if stored != recomputed:
             differing = sorted(
                 key
@@ -360,44 +385,170 @@ def verify(root: Path, stage: str) -> list[str]:
     return problems + verify_runtime(root, stage)
 
 
-def closure_record(root: Path, stage: str) -> dict[str, object]:
-    """Evidence produced by an actual S00-B hardware run, recorded deterministically.
+def image_identity_state(
+    root: Path, env_manifest: dict[str, object], build_commit: str
+) -> tuple[str, list[str]]:
+    """Bind the sealed image to the commit it was built from, without an impossible cycle.
 
-    The pre-hardware acceptance bundle cannot contain this: it does not exist until the H100
-    has run. Emitting it explicitly is what closes S00-B, instead of comparing post-run state
-    to a pre-run hash [AUTH: 01 §16, §26(13); 02 §C6; plan §19].
+    `S00B_IMAGE_RECORD.json` is written by the build, so it cannot already exist inside the
+    commit that produced the image. Requiring it to would be an infinite
+    build -> edit record -> commit -> rebuild loop. The authoritative identity is therefore
+    the one baked into /etc/pmm-image.json, which capture copied into the environment
+    manifest from inside the image and which no caller can supply.
+
+    States:
+      CONSISTENT       the committed record describes exactly this image
+      PENDING_COMMIT   no record yet for this image; expected on the pod, closed by the
+                       closure commit
+      PENDING_REBUILD  the image was built from a different commit than the one being closed
+      TAMPERED         the record claims THIS image but disagrees about its source commit,
+                       or the baked digest is malformed
     """
-    readiness_path = root / READINESS_REL
-    readiness = (
-        json.loads(readiness_path.read_text(encoding="utf-8")) if readiness_path.is_file() else {}
-    )
+    problems: list[str] = []
+    digest = env_manifest.get("docker_image_digest")
+    source_commit = env_manifest.get("image_source_git_commit")
+
+    if not isinstance(digest, str) or not digest.startswith("sha256:") or len(digest) != 71:
+        problems.append(f"baked image digest is malformed: {digest!r}")
+        return "TAMPERED", problems
+    if not isinstance(source_commit, str) or not FULL_SHA_RE.match(source_commit):
+        problems.append(f"baked image source commit is malformed: {source_commit!r}")
+        return "TAMPERED", problems
+    if source_commit != build_commit:
+        problems.append(
+            f"the image was built from {source_commit[:12]} but closure is for "
+            f"{build_commit[:12]}; rebuild from the build commit"
+        )
+        return "PENDING_REBUILD", problems
+
+    record_path = root / IMAGE_RECORD_REL
+    if not record_path.is_file():
+        return "PENDING_COMMIT", problems
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        problems.append(f"{IMAGE_RECORD_REL} is not valid JSON ({exc.msg})")
+        return "TAMPERED", problems
+    if record.get("sealed_image_digest") != digest:
+        return "PENDING_COMMIT", problems
+    if record.get("source_git_commit") != source_commit:
+        problems.append(
+            f"{IMAGE_RECORD_REL} claims this image but a different source commit: "
+            f"{record.get('source_git_commit')!r} != {source_commit!r}"
+        )
+        return "TAMPERED", problems
+    return "CONSISTENT", problems
+
+
+def closure_problems(record: dict[str, object]) -> list[str]:
+    """Typed accessor for the closure record's problem list."""
+    problems = record.get("problems")
+    return [str(p) for p in problems] if isinstance(problems, list) else []
+
+
+def closure_record(root: Path, stage: str) -> dict[str, object]:
+    """Evidence produced by an actual S00-B hardware run, bound end to end.
+
+    Closure requires the whole chain to agree: the scientific commit the bundle describes,
+    the build commit the image was made from and the repository is at, the identity baked
+    into the image, the environment manifest, a current-environment GPU PASS, and readiness
+    [AUTH: 01 §16, §26(13); 02 §C6; plan §19].
+    """
+    problems: list[str] = []
+    build_commit = git(root, "rev-parse", "HEAD").strip()
+
+    described = ""
+    index_path = root / "stage_acceptance" / stage / "00_INDEX.md"
+    if index_path.is_file():
+        match = HEAD_SHA_RE.search(index_path.read_text(encoding="utf-8"))
+        described = match.group(1) if match else ""
+    if not described:
+        problems.append("the bundle records no described commit")
+    elif described != build_commit:
+        ancestor = subprocess.run(
+            ["git", "-C", str(root), "merge-base", "--is-ancestor", described, build_commit],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if ancestor.returncode != 0:
+            problems.append(
+                f"the described commit {described[:12]} is not an ancestor of the build "
+                f"commit {build_commit[:12]}"
+            )
+
+    problems.extend(verify_source(root, stage))
+
     env_dir = root / "manifests" / "environments"
     manifests = (
         [p for p in sorted(env_dir.glob("*.json")) if is_environment_lock_manifest(p)]
         if env_dir.is_dir()
         else []
     )
-    produced = {
-        p.relative_to(root).as_posix(): sha256_file(p)
-        for p in [*manifests, readiness_path]
-        if p.is_file()
-    }
+    env_manifest: dict[str, object] = {}
+    if not manifests:
+        problems.append("no environment manifest; run `make env-capture` on the H100")
+    else:
+        env_manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+        if environment_lock_sha256(env_manifest) != env_manifest.get("environment_lock_sha256"):
+            problems.append(f"{manifests[0].name}: identity does not recompute")
+
+    image_state, image_problems = (
+        image_identity_state(root, env_manifest, build_commit)
+        if env_manifest
+        else ("PENDING_REBUILD", ["no environment manifest to bind the image to"])
+    )
+    problems.extend(image_problems)
+
+    gpu_record = current_lane_pass(root, GPU_LANE)
+    if gpu_record is None:
+        problems.append(
+            "no current-environment gpu_smoke PASS; S00-B closure requires the hardware lane"
+            " to have passed against THIS environment"
+        )
+
+    readiness_path = root / READINESS_REL
+    readiness = (
+        json.loads(readiness_path.read_text(encoding="utf-8")) if readiness_path.is_file() else {}
+    )
+    if readiness.get("computed_by") != READINESS_PRODUCER:
+        problems.append(f"readiness was not authored by {READINESS_PRODUCER}")
     identity = readiness.get("environment_lock_sha256", TBD)
+
+    gpu_evidence_path = root / EVIDENCE_LANES_REL / f"{GPU_LANE}.json"
+    produced_paths = [*manifests, readiness_path, gpu_evidence_path]
+    produced = {
+        p.relative_to(root).as_posix(): sha256_file(p) for p in produced_paths if p.is_file()
+    }
+
+    complete = bool(
+        not problems
+        and identity != TBD
+        and manifests
+        and gpu_record is not None
+        and image_state in {"CONSISTENT", "PENDING_COMMIT"}
+    )
     return {
         "stage": stage,
         "authority": "01 §16, §26(13); 02 §C6; plan §19",
-        "described_commit": git(root, "rev-parse", "HEAD").strip(),
+        "science_described_commit": described,
+        "build_commit": build_commit,
+        "image_source_git_commit": env_manifest.get("image_source_git_commit", TBD),
+        "sealed_image_digest": env_manifest.get("docker_image_digest", TBD),
+        "image_record_state": image_state,
         "environment_lock_sha256": identity,
         "environment_manifests": [p.name for p in manifests],
+        "gpu_smoke": (gpu_record or {}).get("observed", {"outcome": "ABSENT"}),
         "readiness": {
             key: readiness.get(key) for key in ("BACKEND_INTEGRATED", "SUITE_SCOPE", "P0_PRE_READY")
         },
         "produced_artifact_sha256": produced,
-        "s00b_complete": bool(identity != TBD and manifests),
+        "problems": problems,
+        "s00b_complete": complete,
         "note": (
-            "Runtime evidence from one hardware run. Commit the environment manifest, the "
-            "readiness file and this record, then regenerate the bundle so the closure state "
-            "is the described one."
+            "Runtime evidence from one hardware run. P0 evidence eligibility is a separate "
+            "and stricter question: the GPU lane may be a genuine S00-B PASS while readiness "
+            "still classifies it NON_EVIDENTIARY because no S01 RUN_ID exists."
         ),
     }
 
@@ -438,6 +589,8 @@ def main(argv: list[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 1
         if not record["s00b_complete"]:
+            for problem in closure_problems(record):
+                print(problem, file=sys.stderr)
             # Same transactional rule as capture: an incomplete run leaves no artifact that
             # could later be mistaken for closure [AUTH: 02 §C6; plan §19].
             print("s00b_complete = False", file=sys.stderr)

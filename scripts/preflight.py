@@ -14,15 +14,19 @@ backend, GPU or benchmark lanes; it verifies their provenance-bound evidence rec
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -161,6 +165,10 @@ def current_environment_lock(root: Path) -> str:
 # --------------------------------------------------------------------------------------
 # evidentiary-run clean-state guard  (I15 foundation)
 # --------------------------------------------------------------------------------------
+
+
+class CaptureFailure(RuntimeError):
+    """A lane could not be recorded as a genuine current-environment PASS."""
 
 
 class DirtyProductionTreeError(RuntimeError):
@@ -319,36 +327,147 @@ def _load_namespace(base: Path, keys: tuple[str, ...]) -> dict[str, object]:
     return out
 
 
-def record_lane_evidence(
-    root: Path, key: str, outcome: str, detail: str = "", *, now: str | None = None
-) -> Path:
-    """Persist what a lane actually did, so readiness DERIVES the lane state.
+#: The producer whose output readiness re-derivation is allowed to trust [AUTH: 02 §C6].
+READINESS_PRODUCER = "PREFLIGHT_STEP_8"
 
-    A lane that executed and passed must not still read `NOT_RUN` in readiness. The record is
-    written into the lane evidence namespace and bound to the current environment identity;
-    whether it is *accepted* as evidentiary is decided by verify_evidence_record, which still
-    requires a run manifest. At S00 that machinery does not exist yet (S01 owns it), so the
-    lane is recorded as observed-PASS but not accepted, and the flags stay false
-    [AUTH: 02 §C6; 01 §16, §39 S01].
-    """
+
+def expected_lane_test_count(root: Path, lane: str) -> int:
+    """How many test functions the lane defines. A partially collected suite is not a lane."""
+    directory = root / "tests" / lane
+    total = 0
+    if not directory.is_dir():
+        return 0
+    for path in sorted(directory.glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        total += sum(
+            1
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name.startswith("test_")
+        )
+    return total
+
+
+def parse_junit(path: Path) -> dict[str, int]:
+    """Machine-readable outcome. Text scraping cannot distinguish passed from skipped."""
+    root_element = ElementTree.parse(path).getroot()
+    suites = [root_element] if root_element.tag == "testsuite" else list(root_element)
+    counts = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+    for suite in suites:
+        for key in counts:
+            counts[key] += int(suite.get(key, "0"))
+    return counts
+
+
+def invalidate_lane_evidence(root: Path, key: str) -> None:
+    """Remove any previous record BEFORE a new attempt, so a stale PASS cannot survive it."""
     if key not in EVIDENCE_KEYS:
         raise ValueError(f"unknown lane {key!r}; expected one of {', '.join(EVIDENCE_KEYS)}")
+    (root / EVIDENCE_LANES_REL / f"{key}.json").unlink(missing_ok=True)
+
+
+def record_lane_evidence(
+    root: Path,
+    key: str,
+    *,
+    junit_xml: Path,
+    pytest_status: int,
+    detail: str = "",
+    now: str | None = None,
+) -> Path:
+    """Persist a lane PASS, and only a real one. Every condition fails closed.
+
+    A lane that executed and passed must not still read `NOT_RUN` in readiness. But a lane
+    that skipped, partially collected, failed, or ran against an unresolved environment must
+    never leave a PASS behind either — including a PASS left by an earlier successful attempt
+    [AUTH: 02 §C6; 01 §16, §21].
+
+    Acceptance as *readiness* evidence is a separate and stricter question, still decided by
+    verify_evidence_record, which requires a run manifest that S01 introduces.
+    """
+    invalidate_lane_evidence(root, key)
+
+    if pytest_status != 0:
+        raise CaptureFailure(f"{key}: pytest exited {pytest_status}")
+    if not junit_xml.is_file():
+        raise CaptureFailure(f"{key}: no junit report at {junit_xml}")
+    try:
+        counts = parse_junit(junit_xml)
+    except ElementTree.ParseError as exc:
+        raise CaptureFailure(f"{key}: junit report is unparseable ({exc})") from exc
+
+    expected = expected_lane_test_count(root, key)
+    if counts["tests"] == 0 or counts["tests"] < expected:
+        raise CaptureFailure(
+            f"{key}: collected {counts['tests']} of {expected} tests; the required suite did"
+            " not run"
+        )
+    if counts["failures"] or counts["errors"]:
+        raise CaptureFailure(f"{key}: {counts['failures']} failed, {counts['errors']} errored")
+    if counts["skipped"]:
+        raise CaptureFailure(
+            f"{key}: {counts['skipped']} of {counts['tests']} tests skipped; a skipped"
+            " hardware assertion is not a PASS"
+        )
+
+    identity = current_environment_lock(root)
+    if identity == TBD:
+        raise CaptureFailure(
+            f"{key}: the environment identity is unresolved, so this cannot be a"
+            " current-environment PASS; run `make env-capture` first"
+        )
+
     stamp = now or datetime.datetime.now(datetime.UTC).isoformat()
     record = {
-        "status": outcome,
+        "status": "PASS",
         "lane": key,
-        "environment_lock_sha256": current_environment_lock(root),
-        "observed": {"outcome": outcome, "recorded_utc": stamp, "detail": detail.strip()},
+        "environment_lock_sha256": identity,
+        "observed": {
+            "outcome": "PASS",
+            "recorded_utc": stamp,
+            "detail": detail.strip() or f"{counts['tests']} passed, 0 skipped",
+            "tests": counts["tests"],
+            "skipped": counts["skipped"],
+            "expected_tests": expected,
+        },
         "note": (
-            "Lane execution record. Acceptance as readiness evidence additionally requires a"
-            " run manifest under manifests/runs/, which S01 introduces [AUTH: 01 §16, §39 S01]."
+            "Lane execution record bound to the current environment. Acceptance as readiness"
+            " evidence additionally requires a run manifest under manifests/runs/, which S01"
+            " introduces [AUTH: 01 §16, §39 S01]."
         ),
     }
     base = root / EVIDENCE_LANES_REL
     base.mkdir(parents=True, exist_ok=True)
-    path = base / f"{key}.json"
-    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return path
+    target = base / f"{key}.json"
+    handle, temporary = tempfile.mkstemp(dir=str(base), suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, indent=2, sort_keys=True) + "\n")
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+    return target
+
+
+def current_lane_pass(root: Path, key: str) -> dict[str, object] | None:
+    """The lane's PASS record for the CURRENT environment, or None."""
+    path = root / EVIDENCE_LANES_REL / f"{key}.json"
+    if not path.is_file():
+        return None
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(record, dict):
+        return None
+    observed = record.get("observed")
+    if not isinstance(observed, dict) or observed.get("outcome") != "PASS":
+        return None
+    identity = current_environment_lock(root)
+    if identity == TBD or record.get("environment_lock_sha256") != identity:
+        return None
+    return record
 
 
 def load_lane_evidence(root: Path) -> dict[str, object]:
@@ -564,8 +683,10 @@ def main(argv: list[str] | None = None) -> int:
         metavar="LANE",
         help="persist a lane execution record into the evidence namespace",
     )
-    ap.add_argument("--outcome", default="PASS")
+    ap.add_argument("--junit-xml", dest="junit_xml", default=None)
+    ap.add_argument("--pytest-status", dest="pytest_status", type=int, default=None)
     ap.add_argument("--detail", default="")
+    ap.add_argument("--invalidate-lane", dest="invalidate_lane", default=None)
     ap.add_argument(
         "--backend-integrated",
         metavar="READINESS_JSON",
@@ -574,9 +695,27 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
 
+    if args.invalidate_lane:
+        invalidate_lane_evidence(root, args.invalidate_lane)
+        print(f"invalidated any previous {args.invalidate_lane} evidence")
+        return 0
+
     if args.record_lane:
-        written = record_lane_evidence(root, args.record_lane, args.outcome, args.detail)
-        print(f"recorded {args.record_lane} = {args.outcome} in {written.relative_to(root)}")
+        if args.junit_xml is None or args.pytest_status is None:
+            print("--record-lane requires --junit-xml and --pytest-status", file=sys.stderr)
+            return 2
+        try:
+            written = record_lane_evidence(
+                root,
+                args.record_lane,
+                junit_xml=Path(args.junit_xml),
+                pytest_status=args.pytest_status,
+                detail=args.detail,
+            )
+        except (CaptureFailure, ValueError, OSError) as exc:
+            print(f"{args.record_lane}: NOT RECORDED AS PASS - {exc}", file=sys.stderr)
+            return 1
+        print(f"recorded {args.record_lane} = PASS in {written.relative_to(root)}")
         return 0
 
     if args.backend_integrated:

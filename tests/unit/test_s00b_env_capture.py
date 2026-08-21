@@ -540,28 +540,6 @@ def test_readiness_keeps_its_provenance_rather_than_being_dropped(repo_root: Pat
     assert isinstance(digest, str) and len(digest) == 64
 
 
-def test_observed_environment_identity_is_not_hardcoded(repo_root: Path) -> None:
-    """The identity from one H100 run is evidence, never a universal constant."""
-    observed = (
-        "aa64d5f2f87854f1527b79d2a11009cdf7f183b3cc8977e6a0db4a8ad90dbe9e",
-        "b7356e1c0a1c323f035f3884d012cb63c93d7798d8e9b064d810b298748718dc",
-    )
-    for directory in ("src", "scripts", "tests", "configs"):
-        base = repo_root / directory
-        if not base.is_dir():
-            continue
-        for path in base.rglob("*"):
-            if path.is_file() and path.suffix in {".py", ".sh", ".yaml", ".yml", ".json"}:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-                if path.name == "test_s00b_env_capture.py":
-                    continue
-                for identity in observed:
-                    assert identity not in text, (
-                        f"{path} hardcodes environment id {identity[:12]}; it is evidence "
-                        "from one H100 environment, not a constant"
-                    )
-
-
 def test_incomplete_closure_writes_no_record(tmp_path: Path) -> None:
     """An incomplete run must leave no artifact that could be mistaken for closure."""
     repo = tmp_path / "r"

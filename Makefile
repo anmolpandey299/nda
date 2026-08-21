@@ -54,19 +54,17 @@ backend-contract:
 
 ## real model/library/runtime compatibility on H100 [AUTH: 01 §21, §22]
 gpu-smoke:
-	@if ! command -v nvidia-smi >/dev/null 2>&1; then \
+	@$(PY) scripts/preflight.py --invalidate-lane gpu_smoke || exit 1; \
+	 if ! command -v nvidia-smi >/dev/null 2>&1; then \
 	   echo "gpu-smoke: NOT_RUN(NO_GPU) [AUTH: 01 §21; 03 §8]"; \
 	 else \
-	   out=$$(mktemp); $(PYTEST) tests/gpu_smoke > $$out 2>&1; s=$$?; cat $$out; \
-	   if [ $$s -eq 5 ]; then \
-	     echo "gpu-smoke: FAIL zero tests collected; the lane cannot report a state" >&2; \
-	     rm -f $$out; exit 1; \
-	   elif [ $$s -ne 0 ]; then rm -f $$out; exit $$s; \
-	   else \
-	     $(PY) scripts/preflight.py --record-lane gpu_smoke --outcome PASS \
-	       --detail "$$(tail -1 $$out)"; \
-	     rm -f $$out; \
-	   fi; fi
+	   xml=$$(mktemp); out=$$(mktemp); \
+	   $(PYTEST) tests/gpu_smoke --junit-xml=$$xml > $$out 2>&1; s=$$?; cat $$out; \
+	   $(PY) scripts/preflight.py --record-lane gpu_smoke --junit-xml $$xml \
+	     --pytest-status $$s --detail "$$(tail -1 $$out)"; r=$$?; \
+	   rm -f $$xml $$out; \
+	   if [ $$r -ne 0 ]; then exit 1; fi; \
+	 fi
 
 ## 01 §12 steps 2-9 on the real H100 image; every value TBD_REQUIRES_HARDWARE until then
 env-capture:

@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 # S00-B acceptance on the RunPod H100, inside the sealed science image.
 #
-#   bash scripts/bootstrap_runpod_s00b.sh <required-git-commit>
+#   bash scripts/bootstrap_runpod_s00b.sh <BUILD_COMMIT>
+#
+# COMMIT SEMANTICS. Three different commits are involved and they are not interchangeable:
+#
+#   DESCRIBED_COMMIT          the scientific candidate the acceptance bundle describes
+#   BUILD_COMMIT              the bundle commit; it CONTAINS the bundle, so the image must be
+#                             built from it, otherwise the image ships no acceptance bundle
+#   IMAGE_SOURCE_GIT_COMMIT   baked into /etc/pmm-image.json at build time == BUILD_COMMIT
+#   BOOTSTRAP_REQUIRED_COMMIT == BUILD_COMMIT, i.e. the argument to this script
+#
+# Never bootstrap the scientific candidate: that commit predates its own bundle.
 #
 # Verification only: it starts no training, downloads no model and measures nothing it does
 # not observe. Every check FAILS CLOSED [AUTH: 01 §12(2)-(9), §21; 03 §8].
 set -euo pipefail
 
-REQUIRED_COMMIT="${1:?usage: bootstrap_runpod_s00b.sh <required-git-commit>}"
+BUILD_COMMIT="${1:?usage: bootstrap_runpod_s00b.sh <BUILD_COMMIT>}"
+REQUIRED_COMMIT="$BUILD_COMMIT"
 EXPECTED_PYTHON_MAJOR_MINOR="3.13"
 EXPECTED_TORCH="2.13.0+cu130"
 EXPECTED_CAPABILITY="(9, 0)"
@@ -21,7 +32,13 @@ PY="$( [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3 )"
 
 echo "== 1. exact repository commit =="
 HEAD="$(git rev-parse HEAD)"
-[ "$HEAD" = "$REQUIRED_COMMIT" ] || fail "HEAD $HEAD != required $REQUIRED_COMMIT"
+case "$REQUIRED_COMMIT" in
+  ????????????????????????????????????????) : ;;
+  *) fail "BUILD_COMMIT must be a full 40-hex SHA obtained from git rev-parse" ;;
+esac
+git cat-file -e "${REQUIRED_COMMIT}^{commit}" 2>/dev/null \
+  || fail "BUILD_COMMIT $REQUIRED_COMMIT is not a commit in this repository"
+[ "$HEAD" = "$REQUIRED_COMMIT" ] || fail "HEAD $HEAD != BUILD_COMMIT $REQUIRED_COMMIT"
 ok "HEAD = $HEAD"
 
 echo "== 2. clean tree =="
@@ -67,8 +84,8 @@ case "$IMG_DIGEST" in
 esac
 IMG_COMMIT="$($PY -c 'import json,sys;print(json.load(open(sys.argv[1])).get("source_git_commit",""))' "$BAKED")"
 [ "$IMG_COMMIT" = "$REQUIRED_COMMIT" ] \
-  || fail "image was built from $IMG_COMMIT, not the required $REQUIRED_COMMIT"
-ok "image built from the required commit"
+  || fail "image was built from $IMG_COMMIT, not the BUILD_COMMIT $REQUIRED_COMMIT"
+ok "image built from the build commit"
 
 echo "== 8. environment capture (01 §12 steps 2-9) =="
 make env-capture || fail "env-capture left components unresolved"

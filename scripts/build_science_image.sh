@@ -33,6 +33,9 @@ if [ -n "$(git status --porcelain -uall)" ]; then
   echo "refusing to build from a dirty tree [AUTH: 01 §35(3), §36]" >&2
   exit 1
 fi
+# BUILD_COMMIT: the bundle commit. The image must be built from the commit that CONTAINS the
+# acceptance bundle, not from the scientific candidate the bundle describes - otherwise the
+# image ships no bundle and bundle verification inside the pod is impossible.
 COMMIT="$(git rev-parse HEAD)"
 
 # The default `docker` driver cannot always push cross-platform builds; a docker-container
@@ -157,6 +160,8 @@ cat <<SUMMARY
 science image ready
   target platform    : ${TARGET_PLATFORM}
   launch RunPod with : ${IMAGE_REPO}@${SEALED_DIGEST}
+  BUILD_COMMIT       : ${COMMIT}
+  bootstrap with     : bash scripts/bootstrap_runpod_s00b.sh ${COMMIT}
   recorded in        : ${RECORD}
   built from commit  : ${COMMIT}
 Never launch by tag; the digest is the identity [AUTH: 01 §12(9)].

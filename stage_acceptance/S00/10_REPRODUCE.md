@@ -91,14 +91,36 @@ clean tree, an H100, Python 3.13.x, torch 2.13.0+cu130, `torch.cuda.is_available
 capability (9, 0), and the sealed image metadata; then runs `make env-capture`,
 `make gpu-smoke`, `make preflight` and `make bundle-verify`.
 
+### Commit vocabulary — three different commits
+
+```text
+DESCRIBED_COMMIT           the scientific candidate the acceptance bundle describes
+BUILD_COMMIT               the bundle commit. It CONTAINS the bundle, so the image is built
+                           from it; building from DESCRIBED_COMMIT would ship no bundle
+IMAGE_SOURCE_GIT_COMMIT    baked into /etc/pmm-image.json at build time == BUILD_COMMIT
+BOOTSTRAP_REQUIRED_COMMIT  == BUILD_COMMIT, the argument to bootstrap_runpod_s00b.sh
+```
+
+Never bootstrap the scientific candidate; that commit predates its own bundle.
+
+**Obtain every SHA mechanically.** `git rev-parse HEAD`, `git rev-parse HEAD~1`. Never expand
+an abbreviated SHA by hand: a hand-expanded prefix is a fabricated object, and the bootstrap
+now refuses any argument that is not a full 40-hex SHA naming a real commit.
+
 ### S00-B ordering — what runs when, and why
 
 ```text
-immutable image / source            built off-pod, digest-pinned, hash-bound
+scientific candidate  C           bundle describes C
+bundle commit         B = C+1     BUILD_COMMIT; contains the bundle
+image built FROM B                digest-pinned, /etc/pmm-image.json bakes B
         |
 runtime environment capture         make env-capture -> manifests/environments/<64hex>.json
         |
 hardware lane / evidence            make gpu-smoke -> evidence/lanes/gpu_smoke.json
+                                    fail-closed: previous evidence is invalidated first, and
+                                    PASS is written only for a fully collected suite with
+                                    zero skips, zero failures, a resolved environment and a
+                                    successful atomic write
         |
 ordered preflight  steps 0-6        step 5 integration uses BUNDLE-VERIFY-SOURCE only
         |
@@ -107,6 +129,10 @@ readiness re-derivation  step 8     P0_PRE_READINESS.json rewritten for THIS env
 final runtime-aware verification    make bundle-verify   (source AND runtime)
         |
 closure record                      make closure -> 12_S00B_CLOSURE.json
+                                    binds: described commit, build commit, baked image
+                                    source commit and digest, environment manifest, GPU PASS
+                                    for THIS environment, readiness, and the SHA256 of every
+                                    artifact consumed
 ```
 
 The split matters. `bundle-verify-source` checks the described commit, source drift, the diff
@@ -115,6 +141,23 @@ the ordered gate. `bundle-verify` additionally re-derives readiness, which is on
 once step 8 has written readiness for the environment currently in play. Running the full
 verifier at step 5 is circular: readiness still holds the pre-run identity, step 5 fails, and
 step 8 is never reached, so readiness can never become consistent.
+
+### Image record states
+
+`S00B_IMAGE_RECORD.json` is written by the build, so it cannot already exist inside the commit
+that produced the image; requiring it to would be an endless build/edit/commit/rebuild loop.
+The authoritative identity is the one baked into `/etc/pmm-image.json`, which capture copies
+into the environment manifest from inside the image.
+
+```text
+CONSISTENT       the committed record describes exactly this image
+PENDING_COMMIT   no record yet for this image; expected on the pod, closed by the closure
+                 commit. Closure may complete in this state
+PENDING_REBUILD  the image was built from a different commit than the one being closed.
+                 Closure FAILS
+TAMPERED         the record claims THIS image but a different source commit, or the baked
+                 digest is malformed. Closure FAILS
+```
 
 ### Step 4 — close S00-B
 

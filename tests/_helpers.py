@@ -12,7 +12,7 @@ from preflight import EVIDENCE_GATE_REL, EVIDENCE_LANES_REL, environment_lock_sh
 RUN_ID = "a" * 64
 
 
-def write_environment_manifest(root: Path) -> str:
+def write_environment_manifest(root: Path, **overrides: object) -> str:
     """A fully resolved environment manifest whose declared identity is the recomputed one."""
     manifest: dict[str, object] = {k: f"resolved-{k}" for k in ENVIRONMENT_LOCK_COMPONENTS}
     manifest.update(
@@ -26,6 +26,7 @@ def write_environment_manifest(root: Path) -> str:
             "capture_timestamp_utc": "2026-08-21T00:00:00Z",
         }
     )
+    manifest.update(overrides)
     identity = environment_lock_sha256(manifest)
     manifest["environment_lock_sha256"] = identity
     env_dir = root / "manifests" / "environments"
