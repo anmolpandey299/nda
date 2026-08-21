@@ -752,8 +752,8 @@ this commit alone [AUTH: 01 §33, §46; plan §5.2, C-03 closure].
 ```text
 branch             stage/s00   (main and experiment-frozen do not exist yet; they are created
                                 at acceptance and are protected [AUTH: 01 §27])
-candidate commit   9e7552469fff17bb39bc5e63d9f9d18e68e731fd
-                   "S00-B: authoritative GPU count, three commit roles"
+candidate commit   4a200c124eb4f5a02f4c6040919d5be561893f57
+                   "S00-B: permit the one lifecycle image-state transition"
 history            f7e6ee0 bootstrap
                    aaac605 acceptance bundle + AI-stack provenance
                    e481543 report / manifest refresh
@@ -767,7 +767,8 @@ history            f7e6ee0 bootstrap
                    c99e37d S00-B ordering + GPU evidence repair
                    78fdf04 S00-B reconciled repair
                    1dd5b1a S00-B final fix round
-                   9e75524 S00-B targeted closure fix            <- candidate
+                   9e75524 S00-B targeted closure fix
+                   4a200c1 S00-B F02 minimum fix                 <- candidate
 bundle commit      HEAD, carrying only stage_acceptance/S00/ and reviews/S00/ artifacts
 core.hooksPath     .githooks
 working tree       clean; production_tree_dirty() reports []
