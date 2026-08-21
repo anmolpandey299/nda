@@ -156,6 +156,7 @@ REQUIRED_PATHS: tuple[str, ...] = (
     "uv.lock",
     "Dockerfile",
     ".gitignore",
+    ".dockerignore",
     ".githooks/pre-commit",
     ".githooks/pre-push",
     ".github/workflows/ci.yml",
@@ -691,6 +692,86 @@ def check_image_pins(root: Path) -> list[Violation]:
     return out
 
 
+#: Host-generated state that must never enter a Docker build context [AUTH: 01 §12, §46].
+DOCKERIGNORE_REQUIRED: tuple[str, ...] = (
+    ".venv",
+    "**/.venv",
+    "__pycache__",
+    "**/__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".DS_Store",
+)
+#: The image's own interpreter, whose validity every full-context COPY must re-prove.
+VENV_GUARD_MARKER = "/repo/.venv/bin/python"
+
+
+def _dockerfile_stages(text: str) -> list[tuple[str, list[str]]]:
+    stages: list[tuple[str, list[str]]] = []
+    name: str = "<preamble>"
+    body: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("FROM "):
+            stages.append((name, body))
+            parts = line.split()
+            name = parts[parts.index("AS") + 1] if "AS" in parts else parts[1]
+            body = []
+        else:
+            body.append(line)
+    stages.append((name, body))
+    return stages
+
+
+def check_build_context(root: Path) -> list[Violation]:
+    """I16: a host virtualenv cannot enter the image, and every full-context COPY re-proves
+    the image's own interpreter.
+
+    Root cause of the S00-B image defect: with no .dockerignore the host macOS .venv entered
+    the build context and `COPY . .` overwrote the Linux .venv that `uv sync` had just built,
+    leaving /repo/.venv/bin/python dangling at /opt/homebrew [AUTH: 01 §12, §46].
+    """
+    out: list[Violation] = []
+    ignore = root / ".dockerignore"
+    if not ignore.is_file():
+        return [Violation("I16", ".dockerignore", "missing; the host .venv enters the image")]
+    patterns = {
+        line.strip()
+        for line in ignore.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    for required in DOCKERIGNORE_REQUIRED:
+        if required not in patterns:
+            out.append(Violation("I16", ".dockerignore", f"does not exclude {required!r}"))
+    if ".git" in patterns:
+        out.append(
+            Violation(
+                "I16",
+                ".dockerignore",
+                "excludes .git; the image ships /repo as a pinned worktree so the bootstrap"
+                " can verify the commit and the clean tree",
+            )
+        )
+
+    dockerfile = root / "Dockerfile"
+    if not dockerfile.is_file():
+        return out + [Violation("I16", "Dockerfile", "missing")]
+    for name, body in _dockerfile_stages(dockerfile.read_text(encoding="utf-8")):
+        copy_at = next((i for i, line in enumerate(body) if line.strip() == "COPY . ."), None)
+        if copy_at is None:
+            continue
+        if not any(VENV_GUARD_MARKER in line for line in body[copy_at:]):
+            out.append(
+                Violation(
+                    "I16",
+                    f"Dockerfile:{name}",
+                    "`COPY . .` is not followed by a check that the image's own .venv still"
+                    " executes; a host virtualenv could shadow it silently",
+                )
+            )
+    return out
+
+
 def check_no_fabricated_hardware(root: Path) -> list[Violation]:
     """I6: hardware-derived fields are populated by S00-B or exactly TBD_REQUIRES_HARDWARE."""
     out: list[Violation] = []
@@ -790,6 +871,8 @@ CHECKS = (
     check_readiness_authorship,
     check_ci,
     check_no_fabricated_hardware,
+    check_image_pins,
+    check_build_context,
     check_forbidden_provider,
     check_coverage_gate,
 )

@@ -6,7 +6,8 @@
   "image_tag": "s00b",
   "lane": "science",
   "note": "Launch RunPod with sealed_image_digest, never with the tag.",
-  "sealed_image_digest": "sha256:c9014258438f022e48d8b922088810173654888a101fc08281ad004dcbcf695f",
-  "source_git_commit": "f42d7a77de959d534ac5e26899e3858327c61e18",
-  "unsealed_parent_digest": "sha256:16b37053b20c6b5cd2e801fd819c92611621b5e9983e51429380c4bb06b42757"
+  "sealed_image_digest": "sha256:4b59ba918e87eba5c32cd02dafc7cdd25c96fda953c6e3b65a744b80a46d3af7",
+  "source_git_commit": "369ad049f2149d3e516350dd059819fa3f3af751",
+  "target_platform": "linux/amd64",
+  "unsealed_parent_digest": "sha256:d508f2359cee19e7467c425a741ad5b03c2e3943be5a139dea51199033013ddc"
 }

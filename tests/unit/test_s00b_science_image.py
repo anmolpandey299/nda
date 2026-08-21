@@ -12,6 +12,11 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from check_repo_invariants import (
+    VENV_GUARD_MARKER,
+    _dockerfile_stages,
+    check_build_context,
+)
 from preflight import TBD, is_environment_lock_manifest
 
 SCIENCE_TORCH = "2.13.0"
@@ -269,3 +274,130 @@ def test_measurements_requiring_hardware_are_still_unmeasured(repo_root: Path) -
         (repo_root / "manifests/environments/S00B_HARDWARE_PROBE.json").read_text("utf-8")
     )
     assert set(STILL_UNMEASURED) <= set(probe["still_unmeasured"])
+
+
+# ------------------------------------------------------------------ host-venv contamination
+DOCKERIGNORE_REQUIRED = (
+    ".venv",
+    "**/.venv",
+    "__pycache__",
+    "**/__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".DS_Store",
+)
+
+
+@pytest.fixture(scope="module")
+def dockerfile(repo_root: Path) -> str:
+    return (repo_root / "Dockerfile").read_text(encoding="utf-8")
+
+
+def _patterns(repo_root: Path) -> set[str]:
+    text = (repo_root / ".dockerignore").read_text(encoding="utf-8")
+    return {
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+
+def test_dockerignore_excludes_the_host_venv(repo_root: Path) -> None:
+    """The defect: no .dockerignore, so `COPY . .` overwrote the image's Linux .venv with the
+    host's macOS one and /repo/.venv/bin/python dangled at /opt/homebrew."""
+    assert (repo_root / ".dockerignore").is_file()
+    patterns = _patterns(repo_root)
+    for required in DOCKERIGNORE_REQUIRED:
+        assert required in patterns, f".dockerignore does not exclude {required!r}"
+
+
+def test_dockerignore_keeps_git(repo_root: Path) -> None:
+    """The image ships /repo as a pinned worktree so the bootstrap can verify the commit and
+    the clean tree inside the pod [AUTH: 01 §35(3), §36]."""
+    assert ".git" not in _patterns(repo_root)
+
+
+def test_every_full_context_copy_revalidates_the_image_venv(dockerfile: str) -> None:
+    stages = _dockerfile_stages(dockerfile)
+    checked = 0
+    for name, body in stages:
+        copy_at = next((i for i, line in enumerate(body) if line.strip() == "COPY . ."), None)
+        if copy_at is None:
+            continue
+        checked += 1
+        assert any(VENV_GUARD_MARKER in line for line in body[copy_at:]), (
+            f"stage {name}: `COPY . .` has no post-COPY interpreter check"
+        )
+    assert checked == 2, f"expected the cpu-dev and science lanes, found {checked}"
+
+
+def test_guard_proves_a_linux_interpreter_and_the_locked_torch(dockerfile: str) -> None:
+    science = dockerfile.split("AS science\n", 1)[1].split("AS science-sealed", 1)[0]
+    assert "sys.platform == 'linux'" in science
+    assert "sys.version_info[:2] == (3, 13)" in science
+    assert f"torch.__version__ == '{SCIENCE_TORCH_PINNED}'" in science
+    assert "/opt/homebrew/*" in science, "the observed host-symlink case must be named"
+
+    cpu = dockerfile.split("AS cpu-dev\n", 1)[1].split("AS science\n", 1)[0]
+    assert "sys.platform == 'linux'" in cpu
+    assert "sys.version_info[:2] == (3, 13)" in cpu
+
+
+def test_frozen_uv_sync_remains_authoritative(dockerfile: str) -> None:
+    """Dependencies are created by uv from the frozen lock, never installed by hand."""
+    assert "uv sync --frozen --extra cpu-dev --extra science --no-install-project" in dockerfile
+    assert "uv sync --frozen --extra cpu-dev --no-install-project" in dockerfile
+    code = "\n".join(line for line in dockerfile.splitlines() if not line.lstrip().startswith("#"))
+    assert "pip install" not in code
+
+
+def test_missing_dockerignore_is_a_violation(tmp_path: Path) -> None:
+    (tmp_path / "Dockerfile").write_text("FROM x@sha256:0 AS a\nCOPY . .\n", encoding="utf-8")
+    violations = check_build_context(tmp_path)
+    assert violations and violations[0].invariant == "I16"
+
+
+def test_dockerignore_without_venv_is_a_violation(tmp_path: Path) -> None:
+    (tmp_path / ".dockerignore").write_text("__pycache__\n", encoding="utf-8")
+    (tmp_path / "Dockerfile").write_text("FROM x@sha256:0 AS a\n", encoding="utf-8")
+    assert any(".venv" in v.reason for v in check_build_context(tmp_path))
+
+
+def test_unguarded_full_context_copy_is_a_violation(tmp_path: Path) -> None:
+    (tmp_path / ".dockerignore").write_text(
+        "\n".join(DOCKERIGNORE_REQUIRED) + "\n", encoding="utf-8"
+    )
+    (tmp_path / "Dockerfile").write_text(
+        "FROM x@sha256:0 AS a\nRUN uv sync --frozen\nCOPY . .\n", encoding="utf-8"
+    )
+    violations = check_build_context(tmp_path)
+    assert any("post-COPY" in v.reason or "still" in v.reason for v in violations), violations
+
+
+def test_excluding_git_is_a_violation(tmp_path: Path) -> None:
+    (tmp_path / ".dockerignore").write_text(
+        "\n".join((*DOCKERIGNORE_REQUIRED, ".git")) + "\n", encoding="utf-8"
+    )
+    (tmp_path / "Dockerfile").write_text("FROM x@sha256:0 AS a\n", encoding="utf-8")
+    assert any(".git" in v.reason for v in check_build_context(tmp_path))
+
+
+def test_platform_repair_is_still_intact(build_script: str) -> None:
+    """This repair must not have regressed the linux/amd64 fix."""
+    passes = _build_passes(build_script)
+    assert len(passes) == 2
+    assert all('--platform "$TARGET_PLATFORM"' in p and "--push" in p for p in passes)
+    assert f'TARGET_PLATFORM="{TARGET_PLATFORM}"' in build_script
+
+
+def test_every_invariant_function_is_registered() -> None:
+    """check_image_pins was defined but never added to CHECKS, so the digest-pin invariant
+    silently never ran. No invariant may be defined and left unwired."""
+    import check_repo_invariants as chk
+
+    defined = {
+        name for name in dir(chk) if name.startswith("check_") and callable(getattr(chk, name))
+    }
+    registered = {fn.__name__ for fn in chk.CHECKS}
+    assert defined - registered == set(), f"unwired invariants: {sorted(defined - registered)}"

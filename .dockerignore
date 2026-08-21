@@ -1,0 +1,35 @@
+# Docker build context exclusions.
+#
+# ROOT CAUSE OF THE S00-B IMAGE DEFECT: with no .dockerignore, the host repository's macOS
+# /Apple Silicon .venv entered the build context, and `COPY . .` after `uv sync` overwrote
+# the Linux .venv the image had just built. Inside the pod that left
+# /repo/.venv/bin/python -> /opt/homebrew/opt/python@3.13/bin/python3.13, a dangling symlink,
+# so the project interpreter did not execute and torch was unimportable.
+#
+# Host-generated environments and caches must never enter the image. The authoritative
+# environment is the one `uv sync --frozen` builds INSIDE the image [AUTH: 01 §12].
+
+# host virtualenvs — the defect above
+.venv
+**/.venv
+venv
+**/venv
+
+# host tool caches
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+**/.pytest_cache
+.mypy_cache
+**/.mypy_cache
+.ruff_cache
+**/.ruff_cache
+
+# host OS noise
+.DS_Store
+**/.DS_Store
+
+# NOTE: .git is deliberately NOT excluded. The image ships /repo as a real pinned worktree so
+# scripts/bootstrap_runpod_s00b.sh can run `git rev-parse HEAD`, verify the exact required
+# commit and enforce the clean-tree gate inside the pod [AUTH: 01 §35(3), §36; plan §8.1].

@@ -261,6 +261,56 @@ amd64 and arm64, a platform-keyed image map, capitalised JSON keys, and an empty
 It accepts the four amd64 shapes and rejects the three others.
 
 
+## 3D. S00-B host-virtualenv contamination repair
+
+Observed on the real H100, inside the sealed linux/amd64 image:
+
+```text
+/repo/.venv/bin/python -> /opt/homebrew/opt/python@3.13/bin/python3.13
+bash: .venv/bin/python: No such file or directory
+```
+
+Root cause confirmed by inspection of the repository, not inferred: the repository had **no
+`.dockerignore` at all**, and the host `.venv/bin/python` is a symlink to
+`/opt/homebrew/opt/python@3.13/bin/python3.13`. Both lanes ran `uv sync --frozen` and then
+`COPY . .`, so the host macOS virtualenv entered the build context and overwrote the Linux
+one the image had just built, leaving a dangling symlink. The system Python and the GPU were
+fine; only the project interpreter was destroyed, which is why it surfaced at run time on the
+H100 rather than at build time.
+
+Repair, minimal and fail-closed:
+
+```text
+.dockerignore    NEW. Excludes .venv, **/.venv, venv, **/venv, __pycache__, **/__pycache__,
+                 *.py[cod], .pytest_cache, .mypy_cache, .ruff_cache, .DS_Store and their **/
+                 forms. .git is deliberately KEPT so /repo is a real pinned worktree and the
+                 bootstrap can verify the commit and the clean tree inside the pod.
+Dockerfile       Both lanes gain a fail-closed RUN immediately after `COPY . .`: it rejects a
+                 .venv/bin/python symlinked into /opt/homebrew, /Users or Homebrew Cellar by
+                 name, requires the interpreter to be executable, and then proves
+                 sys.platform == "linux" and CPython 3.13. The science lane additionally
+                 proves `import torch` and torch.__version__ == 2.13.0+cu130. No GPU is
+                 needed for any of it during the image build.
+invariant I16    check_build_context: .dockerignore must exclude the host-state patterns and
+                 must not exclude .git; every stage containing `COPY . .` must re-prove the
+                 image's own interpreter afterwards.
+```
+
+`uv sync --frozen --extra cpu-dev --extra science --no-install-project` remains the sole
+creator of the environment; nothing is installed by hand. The selected Python, torch, CUDA
+build and scientific package set are untouched, as are the two-pass sealed design, the
+immutable digest mechanism, `SOURCE_GIT_COMMIT` semantics, the clean-tree gate and the
+linux/amd64 platform repair.
+
+### A second, related defect found while wiring I16
+
+`check_image_pins` had been defined but never added to the `CHECKS` tuple, so the Docker
+digest-pin invariant had never actually executed — its test passed because the test reads the
+Dockerfile directly. Both `check_image_pins` and `check_build_context` are now registered, and
+`test_every_invariant_function_is_registered` fails if any `check_*` function is ever left
+unwired again.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.

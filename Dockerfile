@@ -38,6 +38,27 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 RUN uv sync --frozen --extra cpu-dev --no-install-project
 COPY . .
+
+# Fail closed if a host virtualenv reached the image and shadowed the one uv built. Without
+# this, `COPY . .` silently replaced the Linux .venv with a macOS one and the defect only
+# surfaced on the H100 [AUTH: 01 §12, §46].
+RUN set -eu; \
+    if [ -L /repo/.venv/bin/python ]; then \
+      target="$(readlink /repo/.venv/bin/python)"; \
+      case "$target" in \
+        /opt/homebrew/*|/Users/*|/usr/local/Cellar/*) \
+          echo "host virtualenv leaked into the image: .venv/bin/python -> $target" >&2; \
+          exit 1 ;; \
+      esac; \
+    fi; \
+    test -x /repo/.venv/bin/python \
+      || { echo "/repo/.venv/bin/python is missing or not executable" >&2; exit 1; }; \
+    /repo/.venv/bin/python -c "\
+import sys; \
+assert sys.platform == 'linux', sys.platform; \
+assert sys.version_info[:2] == (3, 13), sys.version; \
+import pytest, ruff; \
+print('cpu-dev environment OK', sys.version.split()[0])"
 CMD ["make", "preflight"]
 
 # ---------------------------------------------------------------- science lane (S00-B)
@@ -61,6 +82,27 @@ COPY src ./src
 # --frozen never re-resolves: a drifted lock fails the build [AUTH: 01 §12, §46].
 RUN uv sync --frozen --extra cpu-dev --extra science --no-install-project
 COPY . .
+
+# Same fail-closed guard, plus proof that the frozen science environment is the one that
+# survived the copy. No GPU is required to run this during the image build [AUTH: 01 §12].
+RUN set -eu; \
+    if [ -L /repo/.venv/bin/python ]; then \
+      target="$(readlink /repo/.venv/bin/python)"; \
+      case "$target" in \
+        /opt/homebrew/*|/Users/*|/usr/local/Cellar/*) \
+          echo "host virtualenv leaked into the image: .venv/bin/python -> $target" >&2; \
+          exit 1 ;; \
+      esac; \
+    fi; \
+    test -x /repo/.venv/bin/python \
+      || { echo "/repo/.venv/bin/python is missing or not executable" >&2; exit 1; }; \
+    /repo/.venv/bin/python -c "\
+import sys; \
+assert sys.platform == 'linux', sys.platform; \
+assert sys.version_info[:2] == (3, 13), sys.version; \
+import torch; \
+assert torch.__version__ == '2.13.0+cu130', torch.__version__; \
+print('science environment OK', sys.version.split()[0], torch.__version__)"
 
 # ------------------------------------------------------- sealed science image (pass 2)
 # An image cannot contain its own digest, so identity is sealed in a second pass:
