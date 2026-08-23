@@ -1,0 +1,45 @@
+{
+  "authority": "01 \u00a716, \u00a726(13); 02 \u00a7C6; plan \u00a719",
+  "build_commit": "727d62f2713f87d653656dd2c1b6c16dabc09431",
+  "closure_commit_artifacts": [
+    "manifests/environments/1160b1e44810ae4eeaabd61032898c45d8c127a19d2ed849b536fb7979970dfd.json",
+    "manifests/environments/S00B_IMAGE_RECORD.json",
+    "artifacts/p0_pre/P0_PRE_READINESS.json",
+    "artifacts/p0_pre/evidence/lanes/gpu_smoke.json",
+    "stage_acceptance/S00/12_S00B_CLOSURE.json"
+  ],
+  "closure_head_commit": "727d62f2713f87d653656dd2c1b6c16dabc09431",
+  "environment_lock_sha256": "1160b1e44810ae4eeaabd61032898c45d8c127a19d2ed849b536fb7979970dfd",
+  "environment_manifests": [
+    "1160b1e44810ae4eeaabd61032898c45d8c127a19d2ed849b536fb7979970dfd.json"
+  ],
+  "gpu_smoke": {
+    "detail": "8 passed in 3.03s",
+    "errors": 0,
+    "expected_tests": 8,
+    "failures": 0,
+    "outcome": "PASS",
+    "passed": 8,
+    "recorded_utc": "2026-08-23T17:03:57.604357+00:00",
+    "skipped": 0,
+    "tests": 8
+  },
+  "image_record_state": "CONSISTENT",
+  "image_source_git_commit": "727d62f2713f87d653656dd2c1b6c16dabc09431",
+  "note": "The image stays bound to the build commit. Committing this record at a later HEAD records evidence; it never implies a rebuild. P0 evidence eligibility is separate: the GPU lane may be a genuine S00-B PASS while readiness still classifies it NON_EVIDENTIARY because no S01 RUN_ID exists.",
+  "problems": [],
+  "produced_artifact_sha256": {
+    "artifacts/p0_pre/P0_PRE_READINESS.json": "a9810325b271bf83f4bb43a43b4b4ef4e08ac51c7714f0ddac8ed30537ee0bd8",
+    "artifacts/p0_pre/evidence/lanes/gpu_smoke.json": "feed69e60ae4dc842f9a18b8857fa665147b7c956227422b6ae74e4986914b21",
+    "manifests/environments/1160b1e44810ae4eeaabd61032898c45d8c127a19d2ed849b536fb7979970dfd.json": "4206c49340cd07e3886a7cd35e4fd51a106e307dc2209893ce40d642a9abddf7"
+  },
+  "readiness": {
+    "BACKEND_INTEGRATED": false,
+    "P0_PRE_READY": false,
+    "SUITE_SCOPE": "STATISTICAL_STACK_ONLY"
+  },
+  "s00b_complete": true,
+  "science_described_commit": "c7b83d28e68e38626563b74137cdb6eab0d092ba",
+  "sealed_image_digest": "sha256:4922c5a39ae734f1d86c7b2d128fce953fd0835b725cd4fdce37465a3f3479aa",
+  "stage": "S00"
+}

@@ -4,7 +4,7 @@
   "SUITE_SCOPE": "STATISTICAL_STACK_ONLY",
   "authority": "02 \u00a7C6; 00 \u00a735, \u00a734C.1",
   "computed_by": "PREFLIGHT_STEP_8",
-  "environment_lock_sha256": "TBD_REQUIRES_HARDWARE",
+  "environment_lock_sha256": "1160b1e44810ae4eeaabd61032898c45d8c127a19d2ed849b536fb7979970dfd",
   "environment_problems": [],
   "evidence": {
     "backend_contract": {
@@ -17,7 +17,19 @@
       "status": "NOT_RUN(EMPTY_AT_S00)"
     },
     "gpu_smoke": {
-      "status": "NOT_RUN(NO_GPU)"
+      "observed": {
+        "detail": "8 passed in 3.03s",
+        "errors": 0,
+        "expected_tests": 8,
+        "failures": 0,
+        "outcome": "PASS",
+        "passed": 8,
+        "recorded_utc": "2026-08-23T17:03:57.604357+00:00",
+        "skipped": 0,
+        "tests": 8
+      },
+      "reason": "missing or malformed run_id",
+      "status": "NON_EVIDENTIARY"
     },
     "synthetic_suite": {
       "status": "NOT_RUN(EMPTY_AT_S00)"

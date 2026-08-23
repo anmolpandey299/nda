@@ -1,0 +1,18 @@
+{
+  "environment_lock_sha256": "1160b1e44810ae4eeaabd61032898c45d8c127a19d2ed849b536fb7979970dfd",
+  "lane": "gpu_smoke",
+  "note": "Lane execution record bound to the current environment. Acceptance as readiness evidence additionally requires a run manifest under manifests/runs/, which S01 introduces [AUTH: 01 \u00a716, \u00a739 S01].",
+  "observed": {
+    "detail": "8 passed in 3.03s",
+    "errors": 0,
+    "expected_tests": 8,
+    "failures": 0,
+    "outcome": "PASS",
+    "passed": 8,
+    "recorded_utc": "2026-08-23T17:03:57.604357+00:00",
+    "skipped": 0,
+    "tests": 8
+  },
+  "schema": "s00b.lane-evidence.v1",
+  "status": "PASS"
+}

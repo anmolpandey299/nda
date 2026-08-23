@@ -1,0 +1,11 @@
+{
+  "authority": "01 \u00a712(8)(9), \u00a716; plan \u00a75.6",
+  "base_image_digest": "sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a",
+  "environment_lock_sha256": "1160b1e44810ae4eeaabd61032898c45d8c127a19d2ed849b536fb7979970dfd",
+  "identity_source": "BAKED_INTO_IMAGE",
+  "image_ref": "ghcr.io/anmolpandey299/nda",
+  "lane": "science",
+  "note": "Materialised on the pod from the identity baked into the running image. Commit it with the other closure evidence; never carry it into a later build commit.",
+  "sealed_image_digest": "sha256:4922c5a39ae734f1d86c7b2d128fce953fd0835b725cd4fdce37465a3f3479aa",
+  "source_git_commit": "727d62f2713f87d653656dd2c1b6c16dabc09431"
+}
