@@ -700,6 +700,36 @@ The fixture now follows the real order â€” closure at B, record committed at H â
 reproduces the defect and now proves the fix.
 
 
+## 3L. F05 runtime-path fix
+
+The real H100 run reached preflight and failed on one unit test only:
+`test_f05_bootstrap_and_runbook_cannot_drift`. Capture had succeeded, the GPU lane reported
+8 passed / 0 skipped, and the evidence persisted. The test compared the canonical closure
+list, which after capture resolves to a concrete
+`manifests/environments/<64-hex>.json`, against static documentation, which necessarily
+carries `manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json`. It was demanding that a
+static document predict an identity that does not exist until the H100 computes it.
+
+Fixed on the documentation side rather than by loosening the test:
+
+```text
+executable step   git add $(python scripts/build_bundle.py --root . --stage S00
+                            --closure-artifacts)
+                  the same authority the bootstrap prints, so the five runtime paths are
+                  derived and never typed
+listing           kept as explanation, with the environment manifest as an explicit TEMPLATE
+tests             a concrete <64-hex> manifest path documents as its template; the other four
+                  paths must still appear literally, and a separate test proves the template
+                  is never mistaken for a concrete path
+```
+
+The real requirement is unchanged and re-tested: once capture has run, the canonical list
+resolves to the concrete manifest, and the closure commit adds all five artifacts, so the
+fresh-clone completeness contract still holds. Verified under the H100 condition in a
+disposable clone carrying a synthesised environment manifest: the list resolved concretely and
+the runbook check passed.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.

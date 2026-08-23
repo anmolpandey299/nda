@@ -1,11 +1,12 @@
 {
   "authority": "01 \u00a716, \u00a726(13), \u00a745",
-  "described_commit": "4a200c124eb4f5a02f4c6040919d5be561893f57",
+  "described_commit": "cd9e2195abf69dbcbeaf7adc896945250bd121bd",
   "note": "source_artifacts are hash-bound: any change is source drift. runtime_evidence is produced by execution (preflight step 8, H100 capture, the image build), so it is recorded with its hash at bundle time but verified by re-derivation, not by hash equality; otherwise a correct S00-B run would invalidate its own bundle.",
   "runtime_evidence": {
-    "artifacts/p0_pre/P0_PRE_READINESS.json": "0979b9c3c62cff91f381032c86a408b5c54cdcbc46a56c0e1a898e1d953cd202"
+    "artifacts/p0_pre/P0_PRE_READINESS.json": "0979b9c3c62cff91f381032c86a408b5c54cdcbc46a56c0e1a898e1d953cd202",
+    "manifests/environments/S00B_IMAGE_RECORD.json": "272d65d2c091e21d1a88abdd821604d8465f66f12fde5683815b1141d66113f7"
   },
-  "runtime_evidence_count": 1,
+  "runtime_evidence_count": 2,
   "self_referential_exclusions": [
     "stage_acceptance/S00/00_INDEX.md",
     "stage_acceptance/S00/02_CHANGED_FILES.txt",
@@ -104,7 +105,7 @@
     "stage_acceptance/S00/07_CLAUDE_REVIEW.md": "eb0187504e2d1dbacb938d9854c1535342a5c34e24e686614e78634cd7c823fa",
     "stage_acceptance/S00/08_CODEX_REVIEW.md": "642405805da8ace38528d92e4c98f269ac8a3ae0d899506ba7ac31991c7c86ac",
     "stage_acceptance/S00/09_UNRESOLVED.md": "6829cdb3105a376652ee37c19b0f0160e0e70745cbd7fad95db765fb8b054811",
-    "stage_acceptance/S00/10_REPRODUCE.md": "a268e874bc4526cfbbe0688bc5e7be713fb44f646fb3f3b6ef6c92d62e66171a",
+    "stage_acceptance/S00/10_REPRODUCE.md": "ba1a36547c90181ad90574cbdcb382e1458cef8b04871e5908bd094ee198d3a4",
     "stage_acceptance/S00/11_DATA_INSPECTION_STATEMENT.md": "911fb19e2fa4d6224913895c7606e21d2aeca2e684f1407233db4852ef01a045",
     "tests/_helpers.py": "6d1c410b584d18565dd23c63ed5e16c68233e89b73dec066a8314c2e952247b8",
     "tests/backend_contract/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -125,7 +126,7 @@
     "tests/unit/test_s00_final_fixes.py": "27a38150b100999df10ab1e61ac854aa16653e32faa4cb650375320d344a9cda",
     "tests/unit/test_s00_invariants.py": "f0a78baff2bd0e9a0b07e7e6bcc3dbbc9e4b5e7c6e16800fd8d96824b7d300d9",
     "tests/unit/test_s00b_env_capture.py": "c1f99457230608f4dfc867a0c34099f97bf381b4bb2c0fc418b09d02a5e49d75",
-    "tests/unit/test_s00b_hostile.py": "75bc3c00cc6fb082c032694e2f5bcbda9808f870c3921800fd8b318b8628478d",
+    "tests/unit/test_s00b_hostile.py": "91d5e63dc69c82e505e883207d490b7aeae19b7ceeb1454879a572a6d1936e58",
     "tests/unit/test_s00b_reconciled.py": "db6894a9ab308ab34b4e374ad8b56bce53db05387512a37456eee76462492885",
     "tests/unit/test_s00b_science_image.py": "5b05b839b3b1bdc887be3762f79d5627cafbd0ad7f5d556f308a5e3c9813a346",
     "uv.lock": "5f04ad7f26682f1d114f0e0b5e6a252f99d582db47f33843862bca58511206cf"

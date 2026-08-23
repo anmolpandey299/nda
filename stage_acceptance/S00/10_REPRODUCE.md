@@ -195,14 +195,27 @@ Then bring the runtime evidence back and make it the described state:
 ```bash
 # Every artifact closure consumed and hashed. A fresh clone must contain all of it, or
 # `make bundle-verify` cannot re-check the closure hashes.
-git add manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json \
-        manifests/environments/S00B_IMAGE_RECORD.json \
-        artifacts/p0_pre/P0_PRE_READINESS.json \
-        artifacts/p0_pre/evidence/lanes/gpu_smoke.json \
-        stage_acceptance/S00/12_S00B_CLOSURE.json
+# One machine authority for the five runtime paths. The environment manifest is named after
+# an identity that does not exist until capture has run, so the list is DERIVED, never typed.
+# This is the same command the bootstrap prints on success.
+git add $(python scripts/build_bundle.py --root . --stage S00 --closure-artifacts)
 git commit -m "S00-B: hardware closure evidence"
 make bundle-verify
 ```
+
+The closure commit must contain exactly these artifacts:
+
+```text
+manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json   captured environment manifest
+manifests/environments/S00B_IMAGE_RECORD.json           written by the build host
+artifacts/p0_pre/P0_PRE_READINESS.json                  readiness, re-derived at step 8
+artifacts/p0_pre/evidence/lanes/gpu_smoke.json          the GPU lane evidence consumed
+stage_acceptance/S00/12_S00B_CLOSURE.json               the closure record
+```
+
+`<ENVIRONMENT_LOCK_SHA256>` is a TEMPLATE, not a literal: the manifest is named after the
+identity capture computes on the H100, so no static document can predict it. The `git add`
+above resolves it; this listing only says which five artifacts must end up in the commit.
 
 Do **not** regenerate the bundle after the closure commit. The bundle keeps describing the
 science commit `C`, the image stays permanently bound to the build commit `B`, and the closure

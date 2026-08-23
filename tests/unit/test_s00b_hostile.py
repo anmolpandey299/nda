@@ -181,7 +181,10 @@ def test_f5_runbook_uses_the_build_commit_for_every_executable_step(
 def test_f5_closure_commit_lists_every_consumed_artifact(repo_root: Path) -> None:
     """A fresh clone must contain the evidence verification needs [finding 5, case M]."""
     text = (repo_root / "stage_acceptance/S00/10_REPRODUCE.md").read_text(encoding="utf-8")
-    closure_block = text.split("git add ", 1)[1].split("git commit", 1)[0]
+    # The executable `git add` derives the list, so the artifacts are named in the
+    # explanatory listing, with the environment manifest in template form.
+    closure_block = text.split("The closure commit must contain exactly these artifacts:", 1)[1]
+    closure_block = closure_block.split("```", 2)[1]
     for required in (
         "manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json",
         "manifests/environments/S00B_IMAGE_RECORD.json",
@@ -264,18 +267,68 @@ def test_f01_live_lane_count_matches_the_real_suite(repo_root: Path) -> None:
 
 
 # ============================================================== F05 — one artifact list
-def test_f05_bootstrap_and_runbook_cannot_drift(repo_root: Path) -> None:
-    """Both derive the list from build_bundle, so they cannot disagree."""
+#: The environment manifest is named after an identity capture computes on the H100, so it
+#: cannot appear literally in a static document. Documentation carries the template.
+ENV_MANIFEST_TEMPLATE = "manifests/environments/<ENVIRONMENT_LOCK_SHA256>.json"
+CONCRETE_ENV_MANIFEST = re.compile(r"^manifests/environments/[0-9a-f]{64}\.json$")
+
+
+def _documented_form(rel: str) -> str:
+    """A concrete runtime manifest path documents as its template; everything else is
+    literal."""
+    return ENV_MANIFEST_TEMPLATE if CONCRETE_ENV_MANIFEST.match(rel) else rel
+
+
+def test_f05_bootstrap_and_runbook_share_one_authority(repo_root: Path) -> None:
+    """Both DERIVE the list from build_bundle, so they cannot disagree."""
+    bootstrap = (repo_root / "scripts/bootstrap_runpod_s00b.sh").read_text(encoding="utf-8")
+    runbook = (repo_root / "stage_acceptance/S00/10_REPRODUCE.md").read_text(encoding="utf-8")
+    assert "--closure-artifacts" in bootstrap, "bootstrap must derive, not retype, the list"
+    executable = runbook.split("git add ", 1)[1].split("git commit", 1)[0]
+    assert "--closure-artifacts" in executable, (
+        "the runbook's git add must derive the list, not hardcode paths that include a "
+        "runtime identity"
+    )
+
+
+def test_f05_documented_artifacts_match_the_canonical_list(repo_root: Path) -> None:
+    """The explanatory listing must name the same five artifacts, with the environment
+    manifest in template form because its identity does not exist until capture runs."""
     import build_bundle
 
     canonical = build_bundle.closure_artifact_paths(repo_root, "S00")
-    bootstrap = (repo_root / "scripts/bootstrap_runpod_s00b.sh").read_text(encoding="utf-8")
-    assert "--closure-artifacts" in bootstrap, "bootstrap must derive, not retype, the list"
-
     runbook = (repo_root / "stage_acceptance/S00/10_REPRODUCE.md").read_text(encoding="utf-8")
-    block = runbook.split("git add ", 1)[1].split("git commit", 1)[0]
+    listing = runbook.split("The closure commit must contain exactly these artifacts:", 1)[1]
+    listing = listing.split("```", 2)[1]
     for rel in canonical:
-        assert rel in block, f"the runbook omits {rel}"
+        assert _documented_form(rel) in listing, f"the runbook omits {rel}"
+    assert ENV_MANIFEST_TEMPLATE in listing
+
+
+def test_f05_template_is_never_mistaken_for_a_concrete_path() -> None:
+    concrete = "manifests/environments/" + "a" * 64 + ".json"
+    assert _documented_form(concrete) == ENV_MANIFEST_TEMPLATE
+    assert CONCRETE_ENV_MANIFEST.match(ENV_MANIFEST_TEMPLATE) is None
+    for rel in (
+        "manifests/environments/S00B_IMAGE_RECORD.json",
+        "artifacts/p0_pre/P0_PRE_READINESS.json",
+        "artifacts/p0_pre/evidence/lanes/gpu_smoke.json",
+        "stage_acceptance/S00/12_S00B_CLOSURE.json",
+    ):
+        assert _documented_form(rel) == rel, "only the environment manifest is a template"
+
+
+def test_f05_concrete_manifest_is_still_required_after_capture(tmp_path: Path) -> None:
+    """The real requirement is untouched: once capture has run, the concrete manifest is in
+    the canonical list that the closure commit adds."""
+    import build_bundle
+
+    identity = write_environment_manifest(tmp_path)
+    canonical = build_bundle.closure_artifact_paths(tmp_path, "S00")
+    assert f"manifests/environments/{identity}.json" in canonical
+    assert ENV_MANIFEST_TEMPLATE not in canonical, (
+        "after capture the list must resolve, not stay a template"
+    )
 
 
 def test_f05_canonical_list_covers_every_verifier(repo_root: Path) -> None:
