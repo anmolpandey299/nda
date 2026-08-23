@@ -341,3 +341,62 @@ def test_f05_canonical_list_covers_every_verifier(repo_root: Path) -> None:
     assert "artifacts/p0_pre/P0_PRE_READINESS.json" in canonical
     assert "artifacts/p0_pre/evidence/lanes/gpu_smoke.json" in canonical
     assert "stage_acceptance/S00/12_S00B_CLOSURE.json" in canonical
+
+
+# ============================================================== image-record lifecycle
+def test_image_record_is_derived_from_the_running_image(tmp_path: Path) -> None:
+    """The record describes the image capture ran inside, not one carried in from a build."""
+    import capture_environment as cap
+
+    manifest: dict[str, object] = {
+        "docker_image_digest": "sha256:" + "a" * 64,
+        "image_source_git_commit": "b" * 40,
+        "docker_image_tag": "registry/repo",
+        "base_image_digest": "sha256:" + "c" * 64,
+        "image_lane": "science",
+        "environment_lock_sha256": "d" * 64,
+        "image_identity_source": "BAKED_INTO_IMAGE",
+    }
+    record = cap.image_record_from_environment(manifest)
+    assert record["sealed_image_digest"] == manifest["docker_image_digest"]
+    assert record["source_git_commit"] == manifest["image_source_git_commit"]
+
+    written = cap.write_image_record(tmp_path, manifest)
+    assert written == tmp_path / "manifests/environments/S00B_IMAGE_RECORD.json"
+    assert json.loads(written.read_text(encoding="utf-8")) == record
+
+
+@pytest.mark.parametrize("field", ["docker_image_digest", "image_source_git_commit"])
+def test_image_record_refuses_an_unresolved_identity(tmp_path: Path, field: str) -> None:
+    import capture_environment as cap
+
+    manifest: dict[str, object] = {
+        "docker_image_digest": "sha256:" + "a" * 64,
+        "image_source_git_commit": "b" * 40,
+    }
+    manifest[field] = "TBD_REQUIRES_HARDWARE"
+    with pytest.raises(cap.CaptureError, match="cannot materialise"):
+        cap.image_record_from_environment(manifest)
+
+
+def test_build_script_does_not_write_the_record_into_tracked_source(
+    repo_root: Path,
+) -> None:
+    """Writing a completed record for image A into source bakes A into the next build
+    commit, which is the cycle this fix removes."""
+    script = (repo_root / "scripts/build_science_image.sh").read_text(encoding="utf-8")
+    code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+    assert "S00B_IMAGE_RECORD" not in code
+    assert "manifests/environments" not in code
+
+
+def test_capture_materialises_the_record_after_the_environment(repo_root: Path) -> None:
+    source = (repo_root / "scripts/capture_environment.py").read_text(encoding="utf-8")
+    publish = source.split("def publish(", 1)[1]
+    assert "write_image_record(root, finalised)" in publish
+    assert publish.index("os.replace(temporary") < publish.index("write_image_record")
+
+
+def test_bootstrap_requires_the_materialised_record(repo_root: Path) -> None:
+    script = (repo_root / "scripts/bootstrap_runpod_s00b.sh").read_text(encoding="utf-8")
+    assert "did not materialise the image record" in script

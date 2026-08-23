@@ -88,7 +88,7 @@ stage_acceptance/S00/04_TEST_OUTPUTS/08_preflight.log
 stage_acceptance/S00/04_TEST_OUTPUTS/09_invariants.log
 stage_acceptance/S00/04_TEST_OUTPUTS/10_bundle_verify.log
 stage_acceptance/S00/04_TEST_OUTPUTS/11_bundle_verify_source.log
-stage_acceptance/S00/04_TEST_OUTPUTS/12_f02.log
+stage_acceptance/S00/04_TEST_OUTPUTS/12_f05.log
 stage_acceptance/S00/05_ARTIFACT_MANIFEST.json
 stage_acceptance/S00/06_IMPLEMENTER_REPORT.md
 stage_acceptance/S00/07_CLAUDE_REVIEW.md

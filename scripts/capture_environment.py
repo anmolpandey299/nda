@@ -314,6 +314,55 @@ def capture_image_identity(baked: Path = BAKED_IMAGE_METADATA) -> dict[str, obje
 # --------------------------------------------------------------------------------------
 
 
+IMAGE_RECORD_REL = "manifests/environments/S00B_IMAGE_RECORD.json"
+
+
+def image_record_from_environment(manifest: dict[str, object]) -> dict[str, object]:
+    """Derive the image record from the identity baked into the running image.
+
+    The build host must not write this into tracked source: a completed record for image A
+    would be baked into the next build commit B, the image built from B would conflict with
+    it, and escaping would need another record, commit and rebuild - endlessly. Materialising
+    it here, from the image that is actually running, breaks that cycle while keeping the
+    identity unforgeable, because it comes from /etc/pmm-image.json by way of capture
+    [AUTH: 01 §12(8)(9), §16].
+    """
+    for field in ("docker_image_digest", "image_source_git_commit"):
+        value = manifest.get(field)
+        if not isinstance(value, str) or value == TBD or not value:
+            raise CaptureError(f"cannot materialise the image record: {field} is {value!r}")
+    return {
+        "authority": "01 §12(8)(9), §16; plan §5.6",
+        "lane": manifest.get("image_lane", TBD),
+        "image_ref": manifest.get("docker_image_tag", TBD),
+        "sealed_image_digest": manifest["docker_image_digest"],
+        "source_git_commit": manifest["image_source_git_commit"],
+        "base_image_digest": manifest.get("base_image_digest", TBD),
+        "environment_lock_sha256": manifest.get("environment_lock_sha256", TBD),
+        "identity_source": manifest.get("image_identity_source", TBD),
+        "note": (
+            "Materialised on the pod from the identity baked into the running image. Commit "
+            "it with the other closure evidence; never carry it into a later build commit."
+        ),
+    }
+
+
+def write_image_record(root: Path, manifest: dict[str, object]) -> Path:
+    """Atomically materialise the canonical image record for the running image."""
+    record = image_record_from_environment(manifest)
+    target = root / IMAGE_RECORD_REL
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=str(target.parent), suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, indent=2, sort_keys=True) + "\n")
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+    return target
+
+
 def build_manifest(root: Path, torch: Any) -> dict[str, object]:
     lock = root / "uv.lock"
     if not lock.is_file():
@@ -384,6 +433,9 @@ def publish(root: Path, manifest: dict[str, object], out_dir: Path | None = None
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+    # The image record describes the image this capture ran inside, so it is materialised
+    # here rather than carried in from a previous build [C -> B -> H model].
+    write_image_record(root, finalised)
     return directory / f"{identity}.json"
 
 

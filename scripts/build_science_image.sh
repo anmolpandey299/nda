@@ -133,27 +133,13 @@ docker buildx build \
 SEALED_DIGEST="$(pushed_digest "$META_DIR/pass2.json")"
 require_amd64 "${IMAGE_REPO}@${SEALED_DIGEST}"
 
-RECORD="manifests/environments/S00B_IMAGE_RECORD.json"
-python3 - "$RECORD" "$IMAGE_REPO" "$TAG" "$DIGEST" "$SEALED_DIGEST" "$COMMIT" \
-         "$TARGET_PLATFORM" <<'PYEOF'
-import json, sys
-record, repo, tag, parent, sealed, commit, platform = sys.argv[1:8]
-json.dump({
-    "authority": "01 §12(8)(9), §16; plan §5.6",
-    "lane": "science",
-    "target_platform": platform,
-    "image_ref": repo,
-    "image_tag": tag,
-    "unsealed_parent_digest": parent,
-    "sealed_image_digest": sealed,
-    "source_git_commit": commit,
-    "base_image_ref": "python:3.13-slim",
-    "base_image_digest":
-        "sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a",
-    "note": "Launch RunPod with sealed_image_digest, never with the tag.",
-}, open(record, "w"), indent=2, sort_keys=True)
-open(record, "a").write("\n")
-PYEOF
+# The image record is NOT written into the repository here.
+#
+# Writing a completed record for image A into tracked source means the next build commit B
+# contains A's identity, the image built from B then conflicts with it, and the only way out
+# is another record/commit/rebuild - an endless cycle. The record is instead materialised on
+# the pod from the identity baked into the image that is actually running, and committed
+# later with the other closure evidence [C -> B -> H model].
 
 cat <<SUMMARY
 
@@ -162,7 +148,8 @@ science image ready
   launch RunPod with : ${IMAGE_REPO}@${SEALED_DIGEST}
   BUILD_COMMIT       : ${COMMIT}
   bootstrap with     : bash scripts/bootstrap_runpod_s00b.sh ${COMMIT}
-  recorded in        : ${RECORD}
+  record            : materialised on the pod by `make env-capture`, from the identity
+                      baked into this image; committed later with the closure evidence
   built from commit  : ${COMMIT}
 Never launch by tag; the digest is the identity [AUTH: 01 §12(9)].
 SUMMARY

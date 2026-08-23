@@ -780,6 +780,47 @@ def check_build_context(root: Path) -> list[Violation]:
     return out
 
 
+IMAGE_RECORD_REL = "manifests/environments/S00B_IMAGE_RECORD.json"
+
+
+def check_image_record_lifecycle(root: Path) -> list[Violation]:
+    """I17: a completed image record must never be baked into a build state.
+
+    The record describes one specific built image. If a build commit already contains a
+    record for an older image, the image built from that commit conflicts with it, and
+    escaping needs another record, commit and rebuild - endlessly. The record is materialised
+    on the pod by capture and committed with the closure evidence, so a build state carrying
+    one but no captured environment is stale by construction [AUTH: 01 §12(8)(9), §16].
+    """
+    record = root / IMAGE_RECORD_REL
+    if not record.is_file():
+        return []
+    tracked = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "--error-unmatch", IMAGE_RECORD_REL],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if tracked.returncode != 0:
+        return []
+    env_dir = root / "manifests" / "environments"
+    captured = (
+        [p for p in env_dir.glob("*.json") if re.fullmatch(r"[0-9a-f]{64}", p.stem)]
+        if env_dir.is_dir()
+        else []
+    )
+    if captured:
+        return []
+    return [
+        Violation(
+            "I17",
+            IMAGE_RECORD_REL,
+            "a completed image record is committed with no captured environment; it is a"
+            " record for an earlier image and would be baked into the next build commit",
+        )
+    ]
+
+
 def check_no_fabricated_hardware(root: Path) -> list[Violation]:
     """I6: hardware-derived fields are populated by S00-B or exactly TBD_REQUIRES_HARDWARE."""
     out: list[Violation] = []
@@ -881,6 +922,7 @@ CHECKS = (
     check_no_fabricated_hardware,
     check_image_pins,
     check_build_context,
+    check_image_record_lifecycle,
     check_forbidden_provider,
     check_coverage_gate,
 )

@@ -1407,3 +1407,110 @@ def test_f02_reverse_transition_is_rejected(tmp_path: Path) -> None:
     assert build_bundle.image_identity_state(repo, env, build)[0] == "PENDING_COMMIT"
     problems = build_bundle.verify_closure_record(repo, "S00")
     assert any("not part of the lifecycle" in p for p in problems), problems
+
+
+# ------------------------------------------------- image-record lifecycle: C -> B -> H
+def _run_hardware_materialising_record(repo: Path, build: str) -> str:
+    """The corrected runtime path: capture materialises the image record for the image that
+    is actually running, so no record for an earlier image is carried into the build."""
+    import capture_environment as cap
+
+    identity = _valid_env(repo)
+    _, env_manifest = build_bundle._selected_environment(repo)
+    cap.write_image_record(repo, env_manifest)  # what capture does on the pod
+    record_lane_evidence(
+        repo,
+        "gpu_smoke",
+        junit_xml=_junit_report(repo),
+        pytest_status=0,
+        detail="8 passed, 0 skipped",
+    )
+    (repo / "junit.xml").unlink()
+    write_readiness(repo, compute_readiness(repo))
+    assert build == build_bundle.bundle_build_commit(repo, "S00")
+    return identity
+
+
+def test_lifecycle_build_state_carries_no_image_record(tmp_path: Path) -> None:
+    """At B, before the image exists, there must be no completed record to conflict with."""
+    repo, _science, build = _lifecycle_repo(tmp_path)
+    assert not (repo / "manifests/environments/S00B_IMAGE_RECORD.json").exists()
+    _valid_env(repo)
+    _, env_manifest = build_bundle._selected_environment(repo)
+    state, _ = build_bundle.image_identity_state(repo, env_manifest, build)
+    assert state == "PENDING_COMMIT", "a build state must not pre-declare an image identity"
+
+
+def test_lifecycle_runtime_record_then_h_is_consistent(tmp_path: Path) -> None:
+    """C -> B -> build identity X -> runtime materialises record X -> evidence -> closure
+    -> commit as H -> fresh clone at H."""
+    repo, science, build = _lifecycle_repo(tmp_path)
+    identity = _run_hardware_materialising_record(repo, build)
+
+    _, env_manifest = build_bundle._selected_environment(repo)
+    runtime_state, _ = build_bundle.image_identity_state(repo, env_manifest, build)
+    assert runtime_state == "CONSISTENT", "the materialised record must describe this image"
+    materialised = json.loads(
+        (repo / "manifests/environments/S00B_IMAGE_RECORD.json").read_text(encoding="utf-8")
+    )
+    assert materialised["sealed_image_digest"] == env_manifest["docker_image_digest"]
+    assert materialised["source_git_commit"] == build
+
+    closure = _write_closure(repo)
+    assert closure["s00b_complete"] is True, build_bundle.closure_problems(closure)
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "closure evidence")
+
+    clone = tmp_path / "clone"
+    _run(["git", "clone", "-q", str(repo), str(clone)], tmp_path)
+    _, clone_env = build_bundle._selected_environment(clone)
+    clone_state, _ = build_bundle.image_identity_state(
+        clone, clone_env, build_bundle.bundle_build_commit(clone, "S00")
+    )
+    assert build_bundle.described_commit(clone, "S00") == science
+    assert build_bundle.bundle_build_commit(clone, "S00") == build
+    assert clone_state == "CONSISTENT"
+    assert build_bundle.verify_source(clone, "S00") == []
+    assert build_bundle.verify_runtime(clone, "S00") == []
+    assert build_bundle.verify_closure_record(clone, "S00") == []
+    assert (
+        identity
+        == json.loads(
+            (clone / "artifacts/p0_pre/P0_PRE_READINESS.json").read_text(encoding="utf-8")
+        )["environment_lock_sha256"]
+    )
+
+
+def test_lifecycle_record_for_another_image_still_conflicts(tmp_path: Path) -> None:
+    """Verification is not weakened: a stale record for image Y while X runs must fail."""
+    repo, _science, build = _lifecycle_repo(tmp_path)
+    _run_hardware_materialising_record(repo, build)
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
+        json.dumps({"sealed_image_digest": DIGEST_B, "source_git_commit": build}),
+        encoding="utf-8",
+    )
+    _, env_manifest = build_bundle._selected_environment(repo)
+    state, problems = build_bundle.image_identity_state(repo, env_manifest, build)
+    assert state == "CONFLICTING", problems
+    closure = build_bundle.closure_record(repo, "S00")
+    assert closure["s00b_complete"] is False
+
+
+def test_lifecycle_stale_record_in_a_build_state_is_an_invariant_violation(
+    tmp_path: Path,
+) -> None:
+    """A committed record with no captured environment is a record for an earlier image."""
+    from check_repo_invariants import check_image_record_lifecycle
+
+    repo, _science, build = _lifecycle_repo(tmp_path)
+    (repo / "manifests/environments/S00B_IMAGE_RECORD.json").write_text(
+        json.dumps({"sealed_image_digest": DIGEST_B, "source_git_commit": build}),
+        encoding="utf-8",
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "core.hooksPath=", "commit", "-q", "-m", "stale record")
+    violations = check_image_record_lifecycle(repo)
+    assert violations and violations[0].invariant == "I17", violations
+
+    _valid_env(repo)  # once the environment is captured this is the normal state
+    assert check_image_record_lifecycle(repo) == []

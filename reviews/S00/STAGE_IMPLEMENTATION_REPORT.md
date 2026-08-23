@@ -730,6 +730,46 @@ disposable clone carrying a synthesised environment manifest: the list resolved 
 the runbook check passed.
 
 
+## 3M. Image-record lifecycle fix
+
+Bundle verification on the real H100 failed only because
+`manifests/environments/S00B_IMAGE_RECORD.json`, committed inside the build commit, described
+image `sha256:f381674f...` built from `cd9e2195...`, while the image actually running was
+`sha256:f4afc5...`. State `CONFLICTING`.
+
+Proved mechanically before changing anything:
+
+```text
+git show d10e211bb36d5a85de53cc5be81e0aba367d1b74:manifests/environments/S00B_IMAGE_RECORD.json
+  sealed_image_digest = sha256:f381674fa344d3a9222c0b9ce5de9ef44d40456289ddb8fea6ed0e8be437f33b
+  source_git_commit   = cd9e2195abf69dbcbeaf7adc896945250bd121bd
+```
+
+The record was in the build commit because `build_science_image.sh` wrote it into the tracked
+source tree. Every build therefore baked the previous image's identity into the next build
+commit, and escaping needed another record, commit and rebuild - the cycle the C -> B -> H
+model exists to prevent.
+
+Fixed at the source of the cycle, not by tolerating conflicts:
+
+```text
+build_science_image.sh   no longer writes into the repository; it reports the digests and the
+                         exact bootstrap command
+capture_environment.py   materialises the record from the identity baked into the image that
+                         is actually running, atomically, right after publishing the
+                         environment manifest
+bootstrap                fails if the record was not materialised
+invariant I17            a committed record with no captured environment is a record for an
+                         earlier image and is a violation, so one cannot be carried into a
+                         build commit again
+stale record             untracked and removed, so the next build commit contains none
+```
+
+Verification is not weakened. A record describing a different image than the one running is
+still `CONFLICTING` and still fails closure; there is a test for exactly that. The difference
+is that such a record can no longer be created by the ordinary build path.
+
+
 ## 4. Unresolved issues
 
 Full text in `stage_acceptance/S00/09_UNRESOLVED.md`.

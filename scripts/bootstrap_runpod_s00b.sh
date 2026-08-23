@@ -88,7 +88,12 @@ IMG_COMMIT="$($PY -c 'import json,sys;print(json.load(open(sys.argv[1])).get("so
 ok "image built from the build commit"
 
 echo "== 8. environment capture (01 §12 steps 2-9) =="
+# Capture also materialises manifests/environments/S00B_IMAGE_RECORD.json from the identity
+# baked into THIS image, so no record for an earlier image is ever carried in.
 make env-capture || fail "env-capture left components unresolved"
+[ -f manifests/environments/S00B_IMAGE_RECORD.json ] \
+  || fail "capture did not materialise the image record for the running image"
+ok "image record materialised for the running image"
 
 echo "== 9. gpu smoke =="
 make gpu-smoke || fail "gpu-smoke failed"

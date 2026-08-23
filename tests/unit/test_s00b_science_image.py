@@ -223,7 +223,10 @@ def test_arm64_is_not_built(build_script: str) -> None:
 def test_two_pass_sealed_design_is_preserved(build_script: str) -> None:
     assert "SEALED_PARENT_DIGEST=${DIGEST}" in build_script
     assert "SOURCE_GIT_COMMIT=${COMMIT}" in build_script
-    assert "sealed_image_digest" in build_script
+    # The sealed digest is read and reported; it is no longer written into tracked source,
+    # because a completed record for one image must not be baked into the next build commit.
+    assert "SEALED_DIGEST=" in build_script
+    assert "S00B_IMAGE_RECORD" not in build_script
     assert "refusing to build from a dirty tree" in build_script
 
 
