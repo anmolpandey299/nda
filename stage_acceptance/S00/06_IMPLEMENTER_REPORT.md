@@ -822,8 +822,8 @@ this commit alone [AUTH: 01 §33, §46; plan §5.2, C-03 closure].
 ```text
 branch             stage/s00   (main and experiment-frozen do not exist yet; they are created
                                 at acceptance and are protected [AUTH: 01 §27])
-candidate commit   308aa74792b16535eaa0663a5092c61dd11e4793
-                   "S00-B: derive the runbook closure artifact list"
+candidate commit   c7b83d28e68e38626563b74137cdb6eab0d092ba
+                   "S00-B: materialise the image record from the running image"
 history            f7e6ee0 bootstrap
                    aaac605 acceptance bundle + AI-stack provenance
                    e481543 report / manifest refresh
@@ -839,7 +839,8 @@ history            f7e6ee0 bootstrap
                    1dd5b1a S00-B final fix round
                    9e75524 S00-B targeted closure fix
                    4a200c1 S00-B F02 minimum fix
-                   308aa74 S00-B F05 runtime-path fix            <- candidate
+                   308aa74 S00-B F05 runtime-path fix
+                   c7b83d2 S00-B image-record lifecycle fix      <- candidate
 bundle commit      HEAD, carrying only stage_acceptance/S00/ and reviews/S00/ artifacts
 core.hooksPath     .githooks
 working tree       clean; production_tree_dirty() reports []
