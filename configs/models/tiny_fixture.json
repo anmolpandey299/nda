@@ -1,0 +1,13 @@
+{
+  "extends": "tiny_fixture_defaults.json",
+  "description": "S02 tiny Llama-shaped fixture. Not a research subject [AUTH: 01 §20].",
+  "vocab_size": 64,
+  "hidden_size": 64,
+  "intermediate_size": 128,
+  "num_hidden_layers": 2,
+  "num_attention_heads": 8,
+  "num_key_value_heads": 4,
+  "corpus_records": 16,
+  "canary_records": 8,
+  "stream_label": "s02/tiny-fixture/v1"
+}

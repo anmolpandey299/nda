@@ -16,7 +16,9 @@ than a single descendant? [AUTH: 00 §1]
 `specs/00_MEASUREMENT_SPEC_v1.9_FINAL_CLOSED.md` scientific authority ·
 `specs/01_EXECUTION_STACK_LOCK_v2.md` engineering authority ·
 `specs/02_PRE_EXECUTION_IMPLEMENTATION_CORRECTIONS.md` binding clarifications ·
-`specs/03_REVIEW_GOVERNANCE_LOCK.md` binding review process.
+`specs/03_REVIEW_GOVERNANCE_LOCK.md` binding review process ·
+`specs/04_EXECUTION_ACCELERATION_AMENDMENT.md` binding engineering/review cadence for
+S01-S10 (governance only; not a SPEC_HASHES document, not a RUN_ID input).
 Hashes: `specs/SPEC_HASHES.json`. Accepted stage plan: `stage_acceptance/<stage>/01_PLAN.md`.
 
 ## 3. Non-negotiable invariants — pointers, not restatements
@@ -79,6 +81,9 @@ Architect -> implementer -> deterministic tests -> blind Claude review -> blind 
 [AUTH: 03 §2, §10, §11]. Maximum two rounds [AUTH: 03 §12]. Reviews write only to
 `reviews/<stage>/`; diagnostics only to `reviews/<stage>/scratch/` [AUTH: 03 §9].
 Plans are capped at 1,200 lines [AUTH: 03 §13].
+For S01-S10 this per-stage ceremony is superseded by the Block A-E cadence of `04` §6-§8:
+one independent review per block, a second only on a changed scientific mechanism or an
+unresolved BLOCKER/MAJOR. Full ceremony returns at every `04` §11 freeze point.
 
 ## 8. Forbidden actions
 

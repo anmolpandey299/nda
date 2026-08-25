@@ -1,0 +1,14 @@
+{
+  "authority": "01 §17 material constants live in config; 01 §20 tiny deterministic test model",
+  "description": "Shared defaults for the S02 offline fixture. Extended, never executed directly.",
+  "model_type": "llama",
+  "rms_norm_eps": 1e-05,
+  "max_position_embeddings": 128,
+  "lora_rank": 32,
+  "lora_alpha": 64,
+  "lora_target_modules": ["gate_proj", "up_proj", "down_proj"],
+  "init_scale": 0.02,
+  "lora_init_scale": 0.05,
+  "tokens_per_record": 12,
+  "role": "TEST_FIXTURE_NOT_A_RESEARCH_SUBJECT"
+}

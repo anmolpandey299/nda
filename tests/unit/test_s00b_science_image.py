@@ -17,7 +17,7 @@ from check_repo_invariants import (
     _dockerfile_stages,
     check_build_context,
 )
-from preflight import TBD, is_environment_lock_manifest
+from preflight import TBD, environment_identity_status, is_environment_lock_manifest
 
 SCIENCE_TORCH = "2.13.0"
 SCIENCE_CUDA_BUILD = "cu130"
@@ -270,15 +270,32 @@ def test_probe_is_not_mistaken_for_an_environment_lock(repo_root: Path) -> None:
 
 
 def test_measurements_requiring_hardware_are_still_unmeasured(repo_root: Path) -> None:
-    """No throughput, VRAM or BF16 tolerance may be invented [AUTH: 03 §8; 00 §0.2.4]."""
+    """No throughput, VRAM or BF16 tolerance may be invented [AUTH: 03 §8; 00 §0.2.4].
+
+    The environment identity has two legitimate states, and an invented value is neither:
+
+    INITIAL PRE-HARDWARE      exactly TBD_REQUIRES_HARDWARE, because nothing has been
+                              captured on the H100 yet;
+    ACCEPTED POST-H100        a real digest that *recomputes* from the captured manifest's
+                              01 §12(5)-(9) components, so a hand-written identity is still
+                              rejected [AUTH: 01 §12, §15, §32; 03 §8].
+
+    Either way P0_PRE_READY stays False and the probe's unmeasured list is unchanged, so no
+    hardware-derived measurement has been fabricated.
+    """
     readiness = json.loads(
         (repo_root / "artifacts/p0_pre/P0_PRE_READINESS.json").read_text("utf-8")
     )
-    assert readiness["environment_lock_sha256"] == TBD
+    identity = readiness["environment_lock_sha256"]
+    if identity != TBD:
+        recomputed, problems = environment_identity_status(repo_root)
+        assert problems == [], problems
+        assert identity == recomputed, "readiness declares an identity the components do not give"
     assert readiness["P0_PRE_READY"] is False
     probe = json.loads(
         (repo_root / "manifests/environments/S00B_HARDWARE_PROBE.json").read_text("utf-8")
     )
+    assert probe["accepted_as_environment_lock"] is False
     assert set(STILL_UNMEASURED) <= set(probe["still_unmeasured"])
 
 

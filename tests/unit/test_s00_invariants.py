@@ -31,6 +31,7 @@ from preflight import (
     compute_readiness,
     environment_lock_sha256,
     validate_environment_manifest,
+    validate_lane_evidence,
 )
 
 UNAVAILABLE = "UNAVAILABLE_NOT_EXPOSED"
@@ -95,14 +96,47 @@ def test_a3_plan_length(repo_root: Path) -> None:
 
 # ------------------------------------------------------------------ A4
 def test_a4_readiness_initial_state(repo_root: Path) -> None:
+    """Readiness is not ready, and no lane has become evidentiary.
+
+    Two states are legitimate here and the assertion distinguishes them, because the
+    accepted S00 closure is no longer the initial pre-hardware state:
+
+    INITIAL PRE-HARDWARE      the lane never ran, so its status is NOT_RUN(...) and it
+                              carries no observed block;
+    ACCEPTED POST-H100        the lane genuinely executed on the H100, so it carries a
+                              validated observed block, and readiness holds it at
+                              NON_EVIDENTIARY with a stated reason because 01 §16 makes a
+                              result without a run manifest non-evidentiary. S01 introduces
+                              run manifests; until a lane record cites one, no lane may be
+                              accepted.
+
+    The observed block is re-validated against the authoritative suite rather than trusted
+    as a string, so this is strictly stronger than the previous blanket NOT_RUN assertion
+    [AUTH: 02 §C6; 01 §16, §21; 03 §8].
+    """
     obj = json.loads((repo_root / "artifacts/p0_pre/P0_PRE_READINESS.json").read_text("utf-8"))
     assert obj["BACKEND_INTEGRATED"] is False
     assert obj["SUITE_SCOPE"] == "STATISTICAL_STACK_ONLY"
     assert obj["P0_PRE_READY"] is False
     assert set(obj["evidence"]) == set(EVIDENCE_KEYS)
     assert set(obj["software_gate"]) == set(SOFTWARE_GATE_KEYS)
-    for entry in obj["evidence"].values():
-        assert entry["status"].startswith("NOT_RUN")
+
+    for key, entry in obj["evidence"].items():
+        status = entry["status"]
+        assert status != "PASS", f"{key} is accepted as evidence before any run manifest exists"
+        if status.startswith("NOT_RUN"):
+            assert "observed" not in entry, f"{key} claims observations it never made"
+            continue
+        assert status == "NON_EVIDENTIARY", f"{key} has unexpected status {status!r}"
+        assert entry.get("reason"), f"{key} is NON_EVIDENTIARY without a stated reason"
+        validated, problems = validate_lane_evidence(repo_root, key)
+        assert validated is not None, (
+            f"{key} claims an executed lane it cannot substantiate: {problems}"
+        )
+        assert entry["observed"] == validated["observed"]
+
+    for key, entry in obj["software_gate"].items():
+        assert entry["status"] == "NOT_RUN", f"{key} is {entry['status']} before its stage exists"
 
 
 def test_a4_no_source_path_raises_readiness(repo_root: Path) -> None:

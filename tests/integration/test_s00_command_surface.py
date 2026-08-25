@@ -12,6 +12,8 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import build_bundle
@@ -57,6 +59,64 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return _run(["git", *args], repo)
 
 
+# ------------------------------------------------------------------ hermetic harness
+#: The accepted S00 closure commit, and the source/build commit its bundle describes. S00 is
+#: CLOSED, so both are frozen facts and are asserted as literals for the same reason the four
+#: spec SHA256 values are: a value re-derived from the mutable tree could be moved by the very
+#: change it exists to detect [AUTH: 01 §26, §27, §45; 04 §1, §11].
+S00_CLOSURE_COMMIT = "db9ed078702804b6aa581d74910c6f0e902b5d29"
+S00_DESCRIBED_COMMIT = "c7b83d28e68e38626563b74137cdb6eab0d092ba"
+
+
+@pytest.fixture
+def s00_worktree(repo_root: Path, tmp_path: Path) -> Iterator[Path]:
+    """A throwaway git worktree pinned to the accepted S00 closure commit.
+
+    Verification of a preserved bundle must read the historical source it claims to describe,
+    never the mutable development tree. A pinned worktree gives exactly that: HEAD is the
+    closure commit, no working-tree file is substituted in, and nothing written here can reach
+    the authoritative repository [AUTH: 01 §27, §45; 03 §9].
+    """
+    destination = tmp_path / "s00_pinned"
+    created = _git(repo_root, "worktree", "add", "--detach", str(destination), S00_CLOSURE_COMMIT)
+    assert created.returncode == 0, created.stderr
+    try:
+        yield destination
+    finally:
+        _git(repo_root, "worktree", "remove", "--force", str(destination))
+        _git(repo_root, "worktree", "prune")
+
+
+def _hermetic_gpu_smoke_repo(repo_root: Path, destination: Path, *, seed: bytes) -> Path:
+    """The smallest tree `make gpu-smoke` needs, with a seeded lane record to invalidate.
+
+    The real Makefile and the real scripts/ are copied in, so the production recipe and the
+    production invalidation path are what actually execute; only the tree they act on is
+    disposable [AUTH: 01 §21; 02 §C6].
+    """
+    (destination / "scripts").mkdir(parents=True)
+    shutil.copy(repo_root / "Makefile", destination / "Makefile")
+    for name in ("preflight.py", "check_repo_invariants.py"):
+        shutil.copy(repo_root / "scripts" / name, destination / "scripts" / name)
+    lane = destination / "artifacts" / "p0_pre" / "evidence" / "lanes"
+    lane.mkdir(parents=True)
+    (lane / "gpu_smoke.json").write_bytes(seed)
+    return destination
+
+
+def _make_in(destination: Path, target: str, *, path: str) -> subprocess.CompletedProcess[str]:
+    """Invoke make with a controlled PATH so branch selection does not depend on the host."""
+    environment = dict(os.environ, PATH=path)
+    return subprocess.run(
+        [shutil.which("make") or "make", target, f"PY={sys.executable}"],
+        cwd=destination,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+
 # ------------------------------------------------------------------ A5
 def test_a5_every_target_exists(repo_root: Path) -> None:
     for target in MAKE_TARGETS:
@@ -77,12 +137,99 @@ def test_a5_backend_contract_reports_not_run(repo_root: Path) -> None:
     assert "passed" not in res.stdout.lower()
 
 
-def test_a5_gpu_smoke_reports_not_run_without_hardware(repo_root: Path) -> None:
-    if shutil.which("nvidia-smi"):
-        pytest.skip("H100 present; the NOT_RUN(NO_GPU) branch is not the live one")
-    res = _run(["make", "gpu-smoke"], repo_root)
-    assert res.returncode == 0
+def test_a5_gpu_smoke_reports_not_run_without_hardware(repo_root: Path, tmp_path: Path) -> None:
+    """The NO_GPU branch, exercised hermetically.
+
+    `make gpu-smoke` begins by invalidating any previous lane record. Run against the
+    authoritative working tree that deletes accepted H100 evidence, and on a machine with no
+    GPU nothing recreates it, so the regression suite itself destroyed evidence 01 §36
+    requires to be preserved. The production recipe and the production invalidation path are
+    still what execute here; only the tree they act on is disposable.
+
+    Branch selection is controlled rather than inherited: PATH is a directory that contains
+    nothing, so `command -v nvidia-smi` fails on any host, GPU or not, and the test never has
+    to skip [AUTH: 01 §21, §36; 02 §C6].
+    """
+    seed = b'{"status": "PASS", "sentinel": "accepted-evidence"}\n'
+    empty_path = tmp_path / "empty_bin"
+    empty_path.mkdir()
+    hermetic = _hermetic_gpu_smoke_repo(repo_root, tmp_path / "repo", seed=seed)
+    record = hermetic / "artifacts" / "p0_pre" / "evidence" / "lanes" / "gpu_smoke.json"
+    assert record.read_bytes() == seed
+
+    res = _make_in(hermetic, "gpu-smoke", path=str(empty_path))
+
+    assert res.returncode == 0, res.stdout + res.stderr
     assert "NOT_RUN(NO_GPU)" in res.stdout, res.stdout
+    # the production invalidation path really ran, inside the disposable tree
+    assert not record.exists(), "gpu-smoke did not invalidate the stale lane record"
+
+
+def test_a5_gpu_smoke_never_touches_the_authoritative_evidence(
+    repo_root: Path, tmp_path: Path
+) -> None:
+    """Regression guard for the mutation this suite previously caused.
+
+    Accepted S00 runtime evidence must be byte-identical before and after the whole
+    gpu-smoke path is exercised [AUTH: 01 §27, §36; 03 §9].
+    """
+    live = repo_root / "artifacts" / "p0_pre" / "evidence" / "lanes" / "gpu_smoke.json"
+    before = hashlib.sha256(live.read_bytes()).hexdigest() if live.exists() else None
+
+    empty_path = tmp_path / "empty_bin"
+    empty_path.mkdir()
+    hermetic = _hermetic_gpu_smoke_repo(repo_root, tmp_path / "repo", seed=b"{}\n")
+    _make_in(hermetic, "gpu-smoke", path=str(empty_path))
+
+    after = hashlib.sha256(live.read_bytes()).hexdigest() if live.exists() else None
+    assert after == before, "the gpu-smoke lane mutated accepted S00 evidence"
+
+    # Wider guard: no tracked evidentiary path may be modified or deleted by this suite.
+    # Untracked files are excluded because later stages legitimately produce new run
+    # directories there [AUTH: 01 §27, §36].
+    porcelain = _git(
+        repo_root,
+        "status",
+        "--porcelain",
+        "--untracked-files=no",
+        "--",
+        "artifacts",
+        "manifests",
+        "stage_acceptance",
+        "reviews",
+    ).stdout
+    assert porcelain == "", f"tracked evidence changed during the suite:\n{porcelain}"
+
+
+def test_a5_gpu_smoke_hardware_branch_records_no_pass_when_the_lane_fails(
+    repo_root: Path, tmp_path: Path
+) -> None:
+    """The controlled PATH selects the branch, and a failing lane fabricates nothing.
+
+    A `nvidia-smi` on PATH drives the recipe down the hardware branch on this CPU host, which
+    proves the NO_GPU result above is caused by the harness and not by the machine. The
+    stand-in suite fails, so `--record-lane` must refuse to leave a PASS behind
+    [AUTH: 02 §C6; 01 §16, §21].
+    """
+    hermetic = _hermetic_gpu_smoke_repo(repo_root, tmp_path / "repo", seed=b"{}\n")
+    suite = hermetic / "tests" / "gpu_smoke"
+    suite.mkdir(parents=True)
+    (suite / "test_stand_in.py").write_text(
+        "def test_stand_in() -> None:\n    raise AssertionError('no H100 here')\n",
+        encoding="utf-8",
+    )
+    fake_bin = tmp_path / "fake_bin"
+    fake_bin.mkdir()
+    nvidia = fake_bin / "nvidia-smi"
+    nvidia.write_text("#!/bin/sh\necho 'stand-in H100'\n", encoding="utf-8")
+    nvidia.chmod(0o755)
+
+    res = _make_in(hermetic, "gpu-smoke", path=f"{fake_bin}:{os.environ.get('PATH', '')}")
+
+    combined = res.stdout + res.stderr
+    assert "NOT_RUN(NO_GPU)" not in combined, combined
+    assert "NOT RECORDED AS PASS" in combined, combined
+    assert not (hermetic / "artifacts/p0_pre/evidence/lanes/gpu_smoke.json").exists()
 
 
 def test_a5_env_capture_fails_while_hardware_is_unresolved(repo_root: Path) -> None:
@@ -335,17 +482,141 @@ def test_fix1_branch_c_unreadable_readiness_is_a_hard_failure(
 
 
 # ------------------------------------------------------------------ FIX 8: bundle exactness
-def test_fix8_committed_bundle_describes_the_current_code(repo_root: Path) -> None:
-    """Immutable half only. The live repository may be mid-run: capture has produced a new
-    environment identity and readiness is not re-derived until preflight step 8, so asserting
-    the runtime half here is a circular ordering dependency. The runtime half is covered by
-    controlled fixtures below and by the bootstrap's final gate."""
-    problems = build_bundle.verify_source(repo_root, "S00")
+#
+# The invariant these tests assert was, until S01, "the preserved S00 bundle describes the
+# current working tree". That held only while S00 was HEAD. From S01 onward every legitimate
+# source change would falsify it, which would make the S00 regression suite forbid the very
+# work the amendment schedules [AUTH: 04 §5, §6].
+#
+# The invariant that is actually required, and that these tests now assert, is:
+#
+#     the preserved S00 bundle describes and verifies the historical source/build state that
+#     the bundle itself records
+#
+# Historical S00 evidence stays immutable; future HEAD is free to move. Verification runs in
+# a worktree pinned to the accepted closure commit, so no working-tree file is ever
+# substituted into the historical check [AUTH: 01 §26, §27, §45; 03 §9].
+
+
+def test_fix8_committed_bundle_describes_its_historical_source(s00_worktree: Path) -> None:
+    """(1) The genuine preserved bundle verifies against the source it claims to describe.
+
+    Immutable half only. The runtime half depends on a re-derived readiness state for the
+    current environment, which is a circular ordering dependency here; it is covered by the
+    controlled fixtures below and by the bootstrap's final gate.
+    """
+    index = (s00_worktree / "stage_acceptance" / "S00" / "00_INDEX.md").read_text("utf-8")
+    manifest = json.loads(
+        (s00_worktree / "stage_acceptance" / "S00" / "05_ARTIFACT_MANIFEST.json").read_text("utf-8")
+    )
+    assert f"head git commit = {S00_DESCRIBED_COMMIT}" in index
+    assert manifest["described_commit"] == S00_DESCRIBED_COMMIT
+
+    problems = build_bundle.verify_source(s00_worktree, "S00")
     assert problems == [], problems
 
 
-def test_fix8_bundle_verify_source_target_passes(repo_root: Path) -> None:
-    assert _run(["make", "bundle-verify-source"], repo_root).returncode == 0
+def test_fix8_bundle_verify_source_target_passes(s00_worktree: Path) -> None:
+    """The production `make bundle-verify-source` target, run on the historical tree."""
+    res = _run(["make", "bundle-verify-source", f"PY={sys.executable}"], s00_worktree)
+    assert res.returncode == 0, res.stdout + res.stderr
+
+
+def test_fix8_corruption_of_the_reconstructed_source_is_detected(s00_worktree: Path) -> None:
+    """(2) Pinning the tree must not blunt the check: a changed byte is still caught."""
+    target = s00_worktree / "scripts" / "preflight.py"
+    target.write_text(target.read_text(encoding="utf-8") + "\n# tampered\n", encoding="utf-8")
+
+    problems = build_bundle.verify_source(s00_worktree, "S00")
+    assert any("source artifact hash mismatch: scripts/preflight.py" in p for p in problems), (
+        problems
+    )
+
+
+def test_fix8_new_s01_files_do_not_invalidate_the_historical_bundle(
+    repo_root: Path, s00_worktree: Path
+) -> None:
+    """(3) Ordinary post-S00 source at current HEAD leaves the historical bundle valid."""
+    manifest = json.loads(
+        (repo_root / "stage_acceptance" / "S00" / "05_ARTIFACT_MANIFEST.json").read_text("utf-8")
+    )
+    recorded = set(manifest["source_artifacts"])
+    present = {path.relative_to(repo_root).as_posix() for path in (repo_root / "src").rglob("*.py")}
+    new_since_s00 = sorted(present - recorded)
+    assert new_since_s00, "expected post-S00 source under src/ in the development tree"
+
+    assert build_bundle.verify_source(s00_worktree, "S00") == []
+
+    head = _git(repo_root, "rev-parse", "HEAD").stdout.strip()
+    if head != S00_CLOSURE_COMMIT:
+        # Precisely why the old invariant was replaced rather than weakened: verified against
+        # the mutable tree, the preserved bundle is reported stale by ordinary S01 progress.
+        assert build_bundle.verify_source(repo_root, "S00") != []
+
+
+def test_fix8_a_forged_recorded_source_identity_is_rejected(s00_worktree: Path) -> None:
+    """(4) Three forgeries of the recorded source/build identity, all refused."""
+    bundle = s00_worktree / "stage_acceptance" / "S00"
+    index, manifest = bundle / "00_INDEX.md", bundle / "05_ARTIFACT_MANIFEST.json"
+    original_index = index.read_text(encoding="utf-8")
+    original_manifest = manifest.read_text(encoding="utf-8")
+    other_real_commit = "727d62f2713f87d653656dd2c1b6c16dabc09431"
+    nonexistent = "0" * 40
+
+    def restore() -> None:
+        index.write_text(original_index, encoding="utf-8")
+        manifest.write_text(original_manifest, encoding="utf-8")
+
+    # (a) index and manifest disagree about the described commit
+    index.write_text(
+        original_index.replace(S00_DESCRIBED_COMMIT, other_real_commit), encoding="utf-8"
+    )
+    problems = build_bundle.verify_source(s00_worktree, "S00")
+    assert any("00_INDEX.md records" in p for p in problems), problems
+    restore()
+
+    # (b) both point at a commit that does not exist
+    index.write_text(original_index.replace(S00_DESCRIBED_COMMIT, nonexistent), encoding="utf-8")
+    manifest.write_text(
+        original_manifest.replace(S00_DESCRIBED_COMMIT, nonexistent), encoding="utf-8"
+    )
+    problems = build_bundle.verify_source(s00_worktree, "S00")
+    assert any("does not exist" in p for p in problems), problems
+    restore()
+
+    # (c) both point consistently at a real but wrong commit; the drift check alone cannot
+    # see this, so the preserved diff is what refuses it
+    index.write_text(
+        original_index.replace(S00_DESCRIBED_COMMIT, other_real_commit), encoding="utf-8"
+    )
+    manifest.write_text(
+        original_manifest.replace(S00_DESCRIBED_COMMIT, other_real_commit), encoding="utf-8"
+    )
+    problems = build_bundle.verify_source(s00_worktree, "S00")
+    assert any("02_DIFF.patch does not equal" in p for p in problems), problems
+    restore()
+
+    assert build_bundle.verify_source(s00_worktree, "S00") == []
+
+
+def test_fix8_the_preserved_bundle_is_byte_identical_at_head(repo_root: Path) -> None:
+    """S00 evidence is immutable: the bundle in the working tree still equals the closure
+    commit's, byte for byte [AUTH: 01 §27; 04 §16]."""
+    listing = _git(
+        repo_root, "ls-tree", "-r", "--name-only", S00_CLOSURE_COMMIT, "stage_acceptance/S00"
+    ).stdout.split()
+    assert listing, "the closure commit records no S00 bundle"
+    for relative in listing:
+        committed = subprocess.run(
+            ["git", "show", f"{S00_CLOSURE_COMMIT}:{relative}"],
+            cwd=repo_root,
+            capture_output=True,
+            check=False,
+        ).stdout
+        current = (repo_root / relative).read_bytes()
+        assert hashlib.sha256(current).hexdigest() == hashlib.sha256(committed).hexdigest(), (
+            f"accepted S00 evidence changed: {relative}"
+        )
 
 
 def test_fix8_drift_after_the_described_commit_is_detected(tmp_path: Path) -> None:
