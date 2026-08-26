@@ -1,0 +1,70 @@
+{
+  "authority": "00 §8.2, §8.3, §9; 01 §17, §30",
+  "description": "The representative DP-LoRA condition and its accounting contract.",
+  "adjacency": {
+    "status": "FROZEN",
+    "value": "SAMPLE_LEVEL_ADD_REMOVE_ONE_RECORD",
+    "note": "00 §8.2. The DP unit is one training record; no user-level or group-level claim is made."
+  },
+  "target_epsilon": {
+    "status": "FROZEN",
+    "value": 8.0,
+    "note": "00 §8.2 initial target epsilon ≈ 8. A target, never the achieved value."
+  },
+  "delta": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "delta is a real DP scientific parameter, not a fixture convenience. 00 §8.2 requires an (epsilon, delta) mechanism but fixes only epsilon; delta is frozen against the real training-set size before the DP arm runs, and the frozen value is bound to the accounting provenance."
+  },
+  "fixture_delta": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 1e-05,
+    "note": "Analytic accountant tests over tiny fixtures only. It must never become the real delta: the evidentiary path reads 'delta' and fails closed while that is REQUIRED_NOT_CALIBRATED."
+  },
+  "clipping_norm": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 §8.3 clipping. Frozen before the DP arm runs."
+  },
+  "noise_multiplier": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 §8.3 DP noise multiplier. Calibrated to the target epsilon at the real sample rate and step count, then frozen."
+  },
+  "smoke_seed": {
+    "status": "FROZEN",
+    "value": 101,
+    "note": "00 §8.2 DP_SMOKE seed = 101. One seed: plumbing only, never inferential."
+  },
+  "inferential_seeds": {
+    "status": "FROZEN",
+    "value": [
+      101,
+      202,
+      303
+    ],
+    "note": "00 §8.2 minimum inferential DP set, required before any inferential DP-arm statement."
+  },
+  "minimum_inferential_seeds": {
+    "status": "FROZEN",
+    "value": 3,
+    "note": "00 §8.2: 1 seed = smoke/plumbing only; 3 seeds = minimum inferential DP set."
+  },
+  "fixture_clipping_norm": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 1.0,
+    "note": "Analytic accountant and clipping tests over tiny fixtures only."
+  },
+  "fixture_noise_multiplier": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 1.0,
+    "note": "Analytic accountant and noise tests over tiny fixtures only."
+  },
+  "fixture_sample_rate": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 0.01,
+    "note": "Analytic accountant tests over tiny fixtures only."
+  },
+  "fixture_steps": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 1000,
+    "note": "Analytic accountant tests over tiny fixtures only."
+  }
+}

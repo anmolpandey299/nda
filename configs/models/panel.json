@@ -1,0 +1,158 @@
+{
+  "authority": "01 §8.1–§8.4, §8A, §8B, §8D, §8E, §8G",
+  "description": "The frozen core four-family research panel. Every revision is UNRESOLVED_NOT_DOWNLOADED: no research-subject model has been acquired.",
+  "panel": [
+    {
+      "alias": "qwen3_5_4b_base",
+      "model_id": "Qwen/Qwen3.5-4B-Base",
+      "architecture_family": "qwen3_5",
+      "base_or_instruct": "base",
+      "role": "PRIMARY_DEEP_GRID",
+      "revision": "UNRESOLVED_NOT_DOWNLOADED",
+      "dp_role": "DP_SECONDARY",
+      "parameter_count": "UNRESOLVED_NOT_DOWNLOADED",
+      "dtype_on_disk": "UNRESOLVED_NOT_DOWNLOADED",
+      "license": "Apache-2.0",
+      "training_data_cutoff": "NOT_OFFICIALLY_DISCLOSED",
+      "config_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "tokenizer_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "weight_file_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "lora_target_mapping": "qwen3_5",
+      "frozen_modules": [
+        "vision_tower",
+        "multi_modal_projector"
+      ]
+    },
+    {
+      "alias": "gemma_4_e4b",
+      "model_id": "google/gemma-4-E4B",
+      "architecture_family": "gemma_4",
+      "base_or_instruct": "base",
+      "role": "CORE_CROSS_FAMILY",
+      "revision": "UNRESOLVED_NOT_DOWNLOADED",
+      "dp_role": null,
+      "parameter_count": "UNRESOLVED_NOT_DOWNLOADED",
+      "dtype_on_disk": "UNRESOLVED_NOT_DOWNLOADED",
+      "license": "Apache-2.0",
+      "training_data_cutoff": "2025-01",
+      "config_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "tokenizer_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "weight_file_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "lora_target_mapping": "gemma_4",
+      "frozen_modules": [
+        "vision_tower",
+        "audio_tower",
+        "multi_modal_projector",
+        "per_layer_embeddings"
+      ]
+    },
+    {
+      "alias": "ministral_3_3b_base",
+      "model_id": "mistralai/Ministral-3-3B-Base-2512",
+      "architecture_family": "ministral_3",
+      "base_or_instruct": "base",
+      "role": "CORE_CROSS_FAMILY",
+      "revision": "UNRESOLVED_NOT_DOWNLOADED",
+      "dp_role": null,
+      "parameter_count": "UNRESOLVED_NOT_DOWNLOADED",
+      "dtype_on_disk": "UNRESOLVED_NOT_DOWNLOADED",
+      "license": "Apache-2.0",
+      "training_data_cutoff": "NOT_OFFICIALLY_DISCLOSED",
+      "config_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "tokenizer_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "weight_file_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "lora_target_mapping": "ministral_3",
+      "frozen_modules": [
+        "vision_encoder"
+      ]
+    },
+    {
+      "alias": "llama_3_2_3b",
+      "model_id": "meta-llama/Llama-3.2-3B",
+      "architecture_family": "llama_3_2",
+      "base_or_instruct": "base",
+      "role": "CLASSICAL_DENSE_ANCHOR",
+      "revision": "UNRESOLVED_NOT_DOWNLOADED",
+      "dp_role": "DP_PRIMARY",
+      "parameter_count": "UNRESOLVED_NOT_DOWNLOADED",
+      "dtype_on_disk": "UNRESOLVED_NOT_DOWNLOADED",
+      "license": "LLAMA_3_2_COMMUNITY_LICENSE",
+      "training_data_cutoff": "2023-12",
+      "config_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "tokenizer_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "weight_file_sha256": "UNRESOLVED_NOT_DOWNLOADED",
+      "lora_target_mapping": "llama_3_2",
+      "frozen_modules": [
+        "embed_tokens",
+        "lm_head"
+      ]
+    }
+  ],
+  "policy": "LANGUAGE_TRUNK_MLP_ONLY",
+  "target_mappings": {
+    "qwen3_5": {
+      "roles": {
+        "gate": "mlp.gate_proj",
+        "up": "mlp.up_proj",
+        "down": "mlp.down_proj"
+      },
+      "forbidden_modules": [
+        "embed_tokens",
+        "lm_head",
+        "visual",
+        "vision_tower"
+      ]
+    },
+    "gemma_4": {
+      "roles": {
+        "gate": "mlp.gate_proj",
+        "up": "mlp.up_proj",
+        "down": "mlp.down_proj"
+      },
+      "forbidden_modules": [
+        "embed_tokens",
+        "lm_head",
+        "vision_tower",
+        "audio_tower",
+        "multi_modal_projector",
+        "per_layer_embeddings"
+      ]
+    },
+    "ministral_3": {
+      "roles": {
+        "gate": "mlp.gate_proj",
+        "up": "mlp.up_proj",
+        "down": "mlp.down_proj"
+      },
+      "forbidden_modules": [
+        "embed_tokens",
+        "lm_head",
+        "vision_encoder",
+        "vision_tower"
+      ]
+    },
+    "llama_3_2": {
+      "roles": {
+        "gate": "mlp.gate_proj",
+        "up": "mlp.up_proj",
+        "down": "mlp.down_proj"
+      },
+      "forbidden_modules": [
+        "embed_tokens",
+        "lm_head"
+      ]
+    },
+    "tiny_fixture": {
+      "roles": {
+        "gate": "mlp.gate_proj",
+        "up": "mlp.up_proj",
+        "down": "mlp.down_proj"
+      },
+      "forbidden_modules": [
+        "embed_tokens",
+        "lm_head"
+      ]
+    }
+  },
+  "note": "License and officially disclosed training cutoffs are read from the published model cards [AUTH: 01 §8.1-§8.4]. Every identity that requires the actual artifact - revision, parameter count, on-disk dtype, config/tokenizer/weight hashes - stays UNRESOLVED_NOT_DOWNLOADED until acquisition [AUTH: 01 §8G; 03 §8]."
+}

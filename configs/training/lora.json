@@ -1,0 +1,113 @@
+{
+  "authority": "00 §8.1, §8.3, §9; 01 §8B, §17, §30",
+  "description": "LoRA target policy, rank and the optimisation constants 00 §8.3 requires to be hashed.",
+  "target_policy": {
+    "status": "FROZEN",
+    "value": "LANGUAGE_TRUNK_MLP_ONLY",
+    "note": "01 §8B primary policy."
+  },
+  "fallback_target_policy": {
+    "status": "FROZEN",
+    "value": "LANGUAGE_TRUNK_ALL_COMMON_LINEAR",
+    "note": "01 §8B fallback, used only on a recorded architecture-compatibility failure."
+  },
+  "adapter_rank": {
+    "status": "FROZEN",
+    "value": 32,
+    "note": "00 §8.3 / 01 §8B primary rank for P0."
+  },
+  "adapter_scaling": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 64.0,
+    "note": "00 §8.3 lists scaling among the values that must be fixed across seeds and hashed; not numerically specified."
+  },
+  "adapter_dropout": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 0.0,
+    "note": "00 §8.3 fixed-across-seeds value; not numerically specified."
+  },
+  "gradient_accumulation_steps": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 §8.3 requires the effective batch construction to be fixed across seeds; the value depends on the H100 memory profile and is frozen before S06 training."
+  },
+  "sequence_length": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "Training sequence length. Must agree with the scoring max_sequence_length the backend reports [AUTH: 02 §C6, §C7]."
+  },
+  "gradient_clipping_norm": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 §8.3 clipping for the NON_DP arm. The DP arm's per-sample clipping norm is a separate constant in training/dp.json and is not a substitute."
+  },
+  "data_order_policy": {
+    "status": "FROZEN",
+    "value": "SHUFFLE_ONCE_PER_EPOCH_FROM_DATA_ORDER_SEED",
+    "note": "01 §30: mini-batch order is driven by the recorded data_order seed family, never by a global RNG."
+  },
+  "checkpoint_policy": {
+    "status": "FROZEN",
+    "value": "FINAL_ADAPTER_ONLY_NO_INTERMEDIATE_SELECTION",
+    "note": "01 §29 / 00 §34B.1A: selecting a checkpoint by looking at an outcome is result-driven tuning; only the final adapter at the declared step count is kept."
+  },
+  "fixture_sequence_length": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 128,
+    "note": "Reference trainer over the tiny fixture only; matches the S03 scoring fixture length."
+  },
+  "optimizer": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 §8.3 optimizer. Frozen before S06 training, against the real model."
+  },
+  "learning_rate": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 §8.3 learning rate. Frozen before S06 training."
+  },
+  "epochs": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 §8.3 number of epochs/steps. Frozen before S06 training."
+  },
+  "batch_size": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 §8.3 batch size. Frozen before S06 training."
+  },
+  "precision": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "01 §16 records precision; the value is bound to the resolved H100 image and is not chosen here."
+  },
+  "fixture_learning_rate": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 0.5,
+    "note": "Reference trainer over the tiny fixture only. Not a research hyperparameter."
+  },
+  "fixture_epochs": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 3,
+    "note": "Reference trainer over the tiny fixture only."
+  },
+  "fixture_batch_size": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 2,
+    "note": "Reference trainer over the tiny fixture only."
+  },
+  "training_seeds": {
+    "status": "FROZEN",
+    "value": [
+      101,
+      202,
+      303
+    ],
+    "note": "00 §9 P0 calibration seeds."
+  },
+  "confirmatory_training_seeds": {
+    "status": "FROZEN",
+    "value": [
+      404,
+      505
+    ],
+    "note": "00 §9 confirmatory extension."
+  },
+  "member_subset_seed_offset": {
+    "status": "FROZEN",
+    "value": 0,
+    "note": "00 §6.3: the member-subset RNG seed is derived from the training seed, not chosen independently."
+  }
+}

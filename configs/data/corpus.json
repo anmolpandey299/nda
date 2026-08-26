@@ -1,0 +1,119 @@
+{
+  "authority": "00 §6.1–§6.4; 01 §8F, §17, §23",
+  "description": "Master-corpus acquisition, deduplication, partitioning and blind-control constants.",
+  "source_query": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "01 §8F: the exact PubMed query is frozen in the data manifest at acquisition; no query has been issued."
+  },
+  "publication_date_floor": {
+    "status": "FROZEN",
+    "value": "2026-04-01",
+    "note": "01 §8F. Publication date only; indexing date is not accepted as a substitute."
+  },
+  "partition_sizes": {
+    "status": "FROZEN",
+    "value": {
+      "TRAIN_CANDIDATES": 30000,
+      "CALIBRATION_NONMEMBERS": 5000,
+      "EVAL_NONMEMBERS": 5000,
+      "RESERVE": 5000
+    },
+    "note": "00 §6.2 target sizes."
+  },
+  "split_seed": {
+    "status": "FROZEN",
+    "value": 20260820,
+    "note": "00 §6.2. Partitions do not change across training seeds."
+  },
+  "exact_duplicate_key": {
+    "status": "FROZEN",
+    "value": "NORMALISED_TEXT_SHA256",
+    "note": "00 §6.2: deduplicate by normalized exact text hash."
+  },
+  "near_duplicate_shingle_size": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 5,
+    "note": "00 §6.2 mandates near-duplicate filtering before split assignment but fixes no shingle size; the frozen value is set at acquisition against the real corpus."
+  },
+  "near_duplicate_threshold": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 0.8,
+    "note": "Jaccard threshold. Same status as the shingle size: required, not yet calibrated against real text."
+  },
+  "natural_member_calibration": {
+    "status": "FROZEN",
+    "value": 2000,
+    "note": "00 §6.3 NATURAL_MEMBER_CALIBRATION."
+  },
+  "natural_member_eval": {
+    "status": "FROZEN",
+    "value": 5000,
+    "note": "00 §6.3 NATURAL_MEMBER_EVAL. Disjoint from the calibration subset."
+  },
+  "blind_control_folds": {
+    "status": "FROZEN",
+    "value": 5,
+    "note": "00 §6.4: 5-fold stratified CV."
+  },
+  "blind_control_cv_seed": {
+    "status": "FROZEN",
+    "value": 6104,
+    "note": "00 §6.4 first CV seed."
+  },
+  "blind_control_confirmatory_seed": {
+    "status": "FROZEN",
+    "value": 6105,
+    "note": "00 §6.4 confirmatory CV seed."
+  },
+  "blind_control_clean_tolerance": {
+    "status": "FROZEN",
+    "value": 0.03,
+    "note": "00 §6.4 initial clean criterion |AUROC - 0.5| <= 0.03."
+  },
+  "blind_control_investigation_band": {
+    "status": "FROZEN",
+    "value": [
+      0.47,
+      0.53
+    ],
+    "note": "00 §6.4 investigation band."
+  },
+  "blind_control_ci_method": {
+    "status": "FROZEN",
+    "value": "PERCENTILE_BOOTSTRAP_OVER_RECORDS",
+    "note": "00 §6.4 requires a 95% CI but fixes no estimator; the algorithm is frozen here before any real corpus is opened. Resampling uses the accepted Block B resampler."
+  },
+  "blind_control_ci_replicates": {
+    "status": "FROZEN",
+    "value": 2000,
+    "note": "Bootstrap replicates for the blind-control CI. Frozen with the method."
+  },
+  "blind_control_ci_seed": {
+    "status": "FROZEN",
+    "value": 6106,
+    "note": "Resampling seed for the blind-control CI. Distinct from the 00 §6.4 CV seeds 6104/6105 so the CI draw cannot reuse a fold assignment."
+  },
+  "blind_control_ci_alpha": {
+    "status": "FROZEN",
+    "value": 0.05,
+    "note": "Two-sided 95% interval, as 00 §6.4 states."
+  },
+  "blind_control_label_balance_rule": {
+    "status": "FROZEN",
+    "value": "REFUSE_UNEQUAL_LABEL_COUNTS",
+    "note": "00 §6.4 requires balanced labels. NATURAL_MEMBER_EVAL and EVAL_NONMEMBERS are equal by construction, so unequal input means an upstream fault; the controller refuses and balancing must be explicit and recorded."
+  },
+  "blind_control_ngram_range": {
+    "status": "FROZEN",
+    "value": [
+      1,
+      2
+    ],
+    "note": "00 §6.4: TF-IDF word 1–2 grams."
+  },
+  "blind_control_regularisation": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 1.0,
+    "note": "00 §6.4 fixes L2-regularised logistic regression but not C; frozen before the real control runs."
+  }
+}

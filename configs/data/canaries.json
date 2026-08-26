@@ -1,0 +1,29 @@
+{
+  "authority": "00 §7.1–§7.5; 01 §17, §30",
+  "description": "Canary pool construction and per-seed inclusion.",
+  "pool_size": {
+    "status": "FROZEN",
+    "value": 4096,
+    "note": "00 §7.1 N_CANARY_CANDIDATES = 4,096."
+  },
+  "inclusion_probability": {
+    "status": "FROZEN",
+    "value": 0.5,
+    "note": "00 §7.2: I_{j,s} ~ Bernoulli(0.5), re-drawn independently per seed."
+  },
+  "generator_seed": {
+    "status": "FROZEN",
+    "value": 20260820,
+    "note": "The pool is built once and reused across seeds; only inclusion is re-drawn."
+  },
+  "secret_length": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 12,
+    "note": "00 §7.1 requires a high-entropy secret without fixing its length; frozen before pool construction."
+  },
+  "repetitions_per_canary": {
+    "status": "FROZEN",
+    "value": 1,
+    "note": "00 §7.3: an included canary appears exactly once. Repetition is not offered under the sample-level DP arm."
+  }
+}
