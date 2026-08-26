@@ -1,0 +1,59 @@
+{
+  "authority": "00 \u00a728A.1, \u00a734B.1; 02 \u00a7C3, \u00a7C4, \u00a7C5",
+  "description": "Frozen dry-run design and calibration identities. The planted-null parameterisation is a plain structural choice: one cell-level and one within-seed noise scale for recovery, and a smaller pair for the audit gaps because D_L and D_R are differences between correlated views. No search or optimisation fitted these to any acceptance value.",
+  "n_registry_cells": 29,
+  "training_seeds": [
+    101,
+    202,
+    303
+  ],
+  "operators": [
+    "O1",
+    "O2",
+    "O3"
+  ],
+  "error_low": 0.05,
+  "error_high": 1.95,
+  "recovery_base": 0.5,
+  "cell_sd": 0.05,
+  "row_sd": 0.02,
+  "gap_cell_sd": 0.02,
+  "gap_row_sd": 0.01,
+  "familywise_calibration_seed_start": 820000,
+  "familywise_calibration_trials": 2000,
+  "familywise_quantile": 0.95,
+  "validation_seeds": [
+    810200,
+    810201,
+    810202
+  ],
+  "cell_cluster_bootstrap_replicates": 500,
+  "cell_cluster_alpha": 0.05,
+  "legacy_marginal_seed_start": 810000,
+  "legacy_marginal_trials": 200,
+  "legacy_marginal_quantile": 0.975,
+  "legacy_marginal_status": "NON_GATING_DIAGNOSTIC",
+  "dry_a_slope": 0.45,
+  "dry_b_operator_effect": 0.25,
+  "positive_control_seed_start": 830000,
+  "positive_control_trials": 200,
+  "positive_control_quantile": 2.5,
+  "positive_control_holdout_seed_start": 840000,
+  "positive_control_holdout_trials": 200,
+  "h1_separation": 2.0,
+  "h1_records_per_class": 2048,
+  "h1_calibration_seed_start": 870000,
+  "h1_calibration_trials": 200,
+  "h1_quantile": 97.5,
+  "h4_target_fpr": 0.01,
+  "h4_simulations": 1000,
+  "h4_sample_sizes": [
+    200,
+    400,
+    800,
+    2048,
+    5000
+  ],
+  "h4_seed_start": 930000,
+  "h4_separation": 2.0
+}

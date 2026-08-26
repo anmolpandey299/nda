@@ -1,0 +1,14 @@
+{
+  "authority": "00 \u00a717, \u00a718, \u00a719, \u00a720.8, \u00a723A, \u00a729, \u00a732; 01 \u00a717",
+  "description": "Frozen statistical constants for the S04 engine. Every key here is consumed by execution; a setting that stops controlling anything is removed rather than left pretending to be authoritative.",
+  "null_level": 0.01,
+  "eligibility_median_floor": 0.05,
+  "bootstrap_replicates": 2000,
+  "bootstrap_alpha": 0.05,
+  "denominator_unstable_above": 0.2,
+  "denominator_unusable_above": 0.3,
+  "functional_relative_floor": 0.02,
+  "functional_max_relative_se": 0.2,
+  "e50_level": 0.5,
+  "e50_min_support": 4
+}

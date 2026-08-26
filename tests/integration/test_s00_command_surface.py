@@ -125,9 +125,23 @@ def test_a5_every_target_exists(repo_root: Path) -> None:
 
 
 def test_a5_synthetic_lane_reports_not_run_never_pass(repo_root: Path) -> None:
+    """An empty synthetic lane reports NOT_RUN; a populated one reports a real result.
+
+    What must never happen is an empty lane reporting PASS [AUTH: 01 §22; 02 §C6]. Block B
+    populates tests/synthetic with the DRY scenarios, so both states are legitimate and the
+    assertion distinguishes them instead of assuming the lane is still empty.
+    """
+    populated = bool(list((repo_root / "tests" / "synthetic").glob("test_*.py"))) or bool(
+        list((repo_root / "tests" / "golden").glob("test_*.py"))
+    )
     res = _run(["make", "synthetic"], repo_root)
-    assert res.returncode == 0
-    assert "NOT_RUN(EMPTY_AT_S00)" in res.stdout, res.stdout
+    assert res.returncode == 0, res.stdout + res.stderr
+    if populated:
+        assert "NOT_RUN(EMPTY_AT_S00)" not in res.stdout, res.stdout
+        assert "passed" in res.stdout, res.stdout
+    else:
+        assert "NOT_RUN(EMPTY_AT_S00)" in res.stdout, res.stdout
+        assert "passed" not in res.stdout.lower(), res.stdout
 
 
 def test_a5_backend_contract_reports_not_run(repo_root: Path) -> None:

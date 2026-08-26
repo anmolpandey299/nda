@@ -1,0 +1,11 @@
+{
+  "authority": "00 \u00a714, \u00a716, \u00a734A; 02 \u00a7C1, \u00a7C2, \u00a7C7; 01 \u00a717 material constants live in config",
+  "description": "Frozen scoring constants for the canonical engine, cache and controller.",
+  "target_fpr": 0.01,
+  "min_k_fraction": 0.2,
+  "precision": "float64",
+  "max_sequence_length": 128,
+  "n_outer_folds": 5,
+  "fold_assignment_seed": 20260825,
+  "ridge_regularisation": 1.0
+}
