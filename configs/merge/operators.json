@@ -1,0 +1,146 @@
+{
+  "authority": "00 §10.1–§10.3, §11, §24, §24A; 01 §17, §39 S07",
+  "description": "S07 operator definitions. Operator constants only — the P0/P1 experiment registry is S09's.",
+  "operator_version": {
+    "status": "FROZEN",
+    "value": "s07.operators.v1",
+    "note": "Bumped whenever executable operator semantics change; it enters every merge artifact identity."
+  },
+  "implemented_operators": {
+    "status": "FROZEN",
+    "value": [
+      "O1_LINEAR_TASK_ARITHMETIC",
+      "O2_DARE",
+      "O3_SVD_TRUNC_MERGE"
+    ],
+    "note": "00 §10.1–§10.3. TIES (§10.4) and quantization (§10.5) are deferred and are refused by the factory rather than stubbed."
+  },
+  "deferred_operators": {
+    "status": "FROZEN",
+    "value": [
+      "TIES",
+      "SLERP",
+      "O4_QUANTIZATION"
+    ],
+    "note": "Not implemented at S07. TIES may enter only under the §10.4 expansion rules."
+  },
+  "descendant_counts": {
+    "status": "FROZEN",
+    "value": [
+      1,
+      2,
+      4
+    ],
+    "note": "00 §11. k = 8 is deferred and is added only if the k = 4 curve has not saturated."
+  },
+  "deferred_descendant_counts": {
+    "status": "FROZEN",
+    "value": [
+      8
+    ],
+    "note": "00 §11 deferred value, declared so a family builder refuses it explicitly rather than by omission."
+  },
+  "coefficient_policy": {
+    "status": "FROZEN",
+    "value": "TWO_PARENT_AFFINE_ALPHA_TAU_A_PLUS_ONE_MINUS_ALPHA_TAU_B",
+    "note": "00 §10.1. The generic operator does not clamp alpha to [0,1]; the registered coefficient schedule is S09's, not the operator's."
+  },
+  "fixture_coefficients": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": [
+      0.0,
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "note": "Deterministic fixture coefficients for S07 operator tests only. Not a registered experiment schedule."
+  },
+  "dare_candidate_drop_probabilities": {
+    "status": "FROZEN",
+    "value": [
+      0.25,
+      0.5,
+      0.75,
+      0.9
+    ],
+    "note": "00 §24 candidate grid for the later utility sweep, with hard minimum p_min = 0.25. S07 implements a general validated p and selects none of these."
+  },
+  "dare_minimum_drop_probability": {
+    "status": "FROZEN",
+    "value": 0.25,
+    "note": "00 §24 p_min. If no p >= p_min passes the utility gate, DARE is removed from the main P1 axis."
+  },
+  "dare_selected_drop_probability": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "p* = max{p : ΔNLL_p <= 0.05} [00 §24]. This is the outcome of a model-NLL utility gate that has NOT been run. Reading it fails closed, so no S07 code can select p*."
+  },
+  "dare_mask_scheme": {
+    "status": "FROZEN",
+    "value": "s07.dare-mask.sha256-counter.v2",
+    "note": "One merge-level DARE seed per descendant; the protected and partner masks are independent domain-separated substreams of it. Each per-tensor stream is keyed on (scheme, operator version, merge seed, constituent role, constituent content identity, tensor name, p). Reordering the same logical task vector cannot move a mask; the merge seed is materially included, and a task vector with a different tensor set is a different task vector and therefore has different masks."
+  },
+  "fixture_dare_merge_seed": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 70701,
+    "note": "One deterministic merge-level DARE seed for S07 fixture tests. Real per-descendant merge seeds are registry values owned by S09. Constituent substreams are derived internally and are not caller-selectable."
+  },
+  "svd_candidate_retained_ranks": {
+    "status": "FROZEN",
+    "value": [
+      24,
+      16,
+      8,
+      4
+    ],
+    "note": "00 §10.3 candidate retained ranks against the primary LoRA rank r = 32. S07 implements a general positive rank and selects none of these."
+  },
+  "svd_selected_retained_rank": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "s* is the outcome of the 00 §24A utility and non-triviality gates, which have NOT been run. Reading it fails closed, so no S07 code can select s*."
+  },
+  "svd_backend": {
+    "status": "FROZEN",
+    "value": "numpy.linalg.svd(full_matrices=False, dtype=float64)",
+    "note": "01 §12. The CPU reference SVD is pinned so truncation is reproducible. Identity is taken over reconstructed matrices, never over U/V, which carry sign and degenerate-basis ambiguity."
+  },
+  "svd_workspace_dtype": {
+    "status": "FROZEN",
+    "value": "float64",
+    "note": "01 §10. The SVD numerical workspace runs in float64 for stability; the resulting T_s matrix is deterministically cast to the arithmetic dtype before it is hashed or composed, so the scientific artifact bytes are float32."
+  },
+  "arithmetic_dtype": {
+    "status": "FROZEN",
+    "value": "float32",
+    "note": "01 §10 merge/recovery arithmetic and 00 §25 P0-C1 ('compute in float32'). Every byte of a scientific merge artifact is float32; a float64 fixture result may never become a production result identity."
+  },
+  "diagnostic_dtype": {
+    "status": "FROZEN",
+    "value": "float64",
+    "note": "01 §10 metrics/statistics: derived scalar quantities are stored in float64. Diagnostics accumulate norms and energies in float64 because they do not define the merged artifact bytes."
+  },
+  "effective_rank_tolerance": {
+    "status": "FROZEN",
+    "value": 1e-06,
+    "note": "00 §24A.6 numerical effective-rank criterion sigma_j / sigma_1 >= 1e-6."
+  },
+  "o3_status": {
+    "status": "FROZEN",
+    "value": "PRE_REGISTERED_CONDITIONAL",
+    "note": "00 §10.3. O3 is pre-registered before P0-D so no replacement operator is chosen after seeing whether DARE succeeded. Implementation availability is not experiment authorization."
+  },
+  "dare_gate_status": {
+    "status": "FROZEN",
+    "value": "NOT_RUN",
+    "note": "00 §24. The utility gate is model NLL on real checkpoints and is not executed at S07."
+  },
+  "o3_gate_status": {
+    "status": "FROZEN",
+    "value": "NOT_RUN",
+    "note": "00 §24A. The utility and non-triviality gates are not executed at S07."
+  },
+  "primary_lossy_operator": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 §24A.7 sets P1_PRIMARY_LOSSY_OPERATOR only after both gates resolve. Reading it fails closed, so no S07 code can name a primary lossy operator."
+  }
+}

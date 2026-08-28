@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from src.analysis.dryrun import (
     COVERED_DRY_SCENARIOS,
     DRY_D_REASON,
@@ -24,15 +26,37 @@ def test_dry_d_status_is_a_recorded_dependency() -> None:
 
 
 def test_the_dry_d_dependency_genuinely_does_not_exist(repo_root: Path) -> None:
-    """The deferral is verified, not asserted: the merge and recovery packages that would
-    produce Delta_tail_priv carry no implementation yet."""
-    for package in ("merge", "recovery"):
-        modules = sorted(
-            path.name
-            for path in (repo_root / "src" / package).glob("*.py")
-            if path.name != "__init__.py"
-        )
-        assert modules == [], f"src/{package} now has {modules}; DRY-D may be implementable"
+    """The deferral is verified, not asserted.
+
+    Delta_tail_priv(s) = R_priv^trunc(s) - f_priv^rank(e_floor(s)) [AUTH: 00 §28B.4], so it
+    needs BOTH an O3 truncation artifact and a recovery R_priv on it. S07 supplied the first
+    half; the second does not exist, so the scenario is still unrunnable.
+
+    Checked three ways, all of which re-fire the moment S08 lands:
+
+    1. the recovery package carries no implementation;
+    2. no merge module produces a recovery or privacy quantity, so S07 cannot smuggle one in;
+    3. 00 §28B runs only under P1_PRIMARY_LOSSY_OPERATOR, which is REQUIRED_NOT_CALIBRATED
+       and therefore fails closed.
+    """
+    recovery = sorted(
+        path.name
+        for path in (repo_root / "src" / "recovery").glob("*.py")
+        if path.name != "__init__.py"
+    )
+    assert recovery == [], f"src/recovery now has {recovery}; DRY-D may be implementable"
+
+    banned = ("r_priv", "delta_tail", "recover", "reconstruct")
+    for path in sorted((repo_root / "src" / "merge").glob("*.py")):
+        source = path.read_text(encoding="utf-8").lower()
+        for name in banned:
+            assert f"def {name}" not in source, f"{path.name} defines {name}; DRY-D input?"
+
+    from src.materials import UncalibratedConstantError, material
+    from src.merge.settings import merge_settings
+
+    with pytest.raises(UncalibratedConstantError):
+        material(merge_settings(repo_root), "primary_lossy_operator")
 
 
 def test_every_other_required_scenario_is_covered() -> None:
