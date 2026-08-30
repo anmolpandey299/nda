@@ -1,0 +1,137 @@
+{
+  "authority": "00 §34C.1A, §35; 01 §39, §42",
+  "description": "The frozen P0 execution sequence as data. Dependencies, gates and calendar classes are transcribed from 00 §35; every empirical gate state is UNRESOLVED here, because no P0 outcome has been opened. The stage machine reads this document; it encodes no branching of its own [AUTH: 00 §35].",
+  "registry_version": "s09.p0-registry.v1",
+  "calendar": {
+    "software_slip": true,
+    "calendar_compressed_mvrs": "ACTIVE",
+    "p1_launch_deadline": "2026-09-03T18:00:00+01:00",
+    "note": "00 §34C.1A: CALENDAR_COMPRESSED_MVRS automatically defers P0-C2, P0-D and P0-E unless one is needed to repair an MVRS validity problem. The deadline is planning metadata: wall clock alone never executes or skips a scientific cell. 00 §42: a missed deadline records P1 = NOT_STARTED_CALENDAR."
+  },
+  "stages": [
+    {
+      "stage_id": "P0-PRE",
+      "title": "Scoring-engine and analysis dry run",
+      "depends_on": [],
+      "calendar_class": "CRITICAL_PATH",
+      "gate": "SCORER_ENGINE=VERIFIED, ANALYSIS_DRY_RUN=PASS, CROSSFIT_NEGATIVE_CONTROL=PASS, CACHE_ASSERTIONS=PASS",
+      "on_failure": "BLOCK_ALL_P0",
+      "note": "00 §35: no empirical P0 result may be opened before this passes."
+    },
+    {
+      "stage_id": "P0-0",
+      "title": "Compute benchmark and reference caching",
+      "depends_on": ["P0-PRE"],
+      "calendar_class": "CRITICAL_PATH",
+      "gate": "P0_00_COMPUTE_BUDGET frozen; fixed theta_0 reference outputs cached once",
+      "on_failure": "BLOCK_DOWNSTREAM",
+      "note": "00 §0.2, §35."
+    },
+    {
+      "stage_id": "P0-A0",
+      "title": "Blind split / deduplication leakage check",
+      "depends_on": ["P0-0"],
+      "calendar_class": "CRITICAL_PATH",
+      "gate": "00 §6.4 blind control",
+      "on_failure": "STOP_NATURAL_PRIVACY_ARM",
+      "note": "00 §35: an initial statistical flag triggers BLIND_SPLIT_INVESTIGATION, not an immediate stop. STOP_NATURAL_PRIVACY_ARM applies only after the confirmed §6.4 failure rule."
+    },
+    {
+      "stage_id": "P0-A",
+      "title": "Oracle privacy power and canary-load control",
+      "depends_on": ["P0-A0"],
+      "calendar_class": "CRITICAL_PATH",
+      "gate": "00 §18 eligibility, applied separately per arm",
+      "on_failure": "STOP_PRIVACY_GRID",
+      "note": "00 §35: STOP_PRIVACY_GRID only if BOTH the canary and natural arms are ineligible."
+    },
+    {
+      "stage_id": "P0-B",
+      "title": "Canary construct validity",
+      "depends_on": ["P0-A"],
+      "calendar_class": "CRITICAL_PATH",
+      "gate": "00 §27 consequence branch",
+      "on_failure": "APPLY_SECTION_27_BRANCH",
+      "note": "00 §35."
+    },
+    {
+      "stage_id": "P0-C1",
+      "title": "Linear oracle plumbing",
+      "depends_on": ["P0-B"],
+      "calendar_class": "CRITICAL_PATH",
+      "gate": "e_F <= 1e-5",
+      "on_failure": "STOP_RECOVERY_PIPELINE",
+      "note": "00 §35: known partner and known coefficient. Failure stops the recovery pipeline for debugging."
+    },
+    {
+      "stage_id": "P0-F",
+      "title": "Synthetic fidelity ladders",
+      "depends_on": ["P0-C1"],
+      "calendar_class": "CRITICAL_PATH",
+      "gate": "00 §28A primary rank-matched and secondary full-rank isotropic ladders",
+      "on_failure": "BLOCK_DOWNSTREAM",
+      "note": "00 §35: run immediately after P0-C1 passes, before the operator grid."
+    },
+    {
+      "stage_id": "P0-C2",
+      "title": "Occupied common-source baseline",
+      "depends_on": ["P0-F"],
+      "calendar_class": "POST_MVRS_EXPANSION",
+      "gate": "published-style baseline must outperform the naive shared mean; k in {2,4}",
+      "on_failure": "STOP_NOVEL_RECOVERY_ARM",
+      "activates": ["Z-INCOMPLETE-VARYING-KNOWN"],
+      "note": "00 §34C.1A defers this under CALENDAR_COMPRESSED_MVRS unless it is required for an already-authorized early P1 launch. 00 §36: the known-varying-alpha lineage is activated only after this fixed baseline is reproduced."
+    },
+    {
+      "stage_id": "P0-D",
+      "title": "DARE utility gate",
+      "depends_on": ["P0-F"],
+      "calendar_class": "POST_MVRS_EXPANSION",
+      "gate": "00 §24 DARE utility gate",
+      "on_pass": "P1_PRIMARY_LOSSY_OPERATOR=DARE",
+      "on_failure": "ENABLE_P0-D2",
+      "note": "00 §35: if DARE fails, execute P0-D2."
+    },
+    {
+      "stage_id": "P0-D2",
+      "title": "O3 SVD-TRUNC-MERGE fallback gate",
+      "depends_on": ["P0-D"],
+      "requires_upstream_failure": "P0-D",
+      "calendar_class": "POST_MVRS_EXPANSION",
+      "gate": "00 §24A utility and non-triviality gates",
+      "on_pass": "P1_PRIMARY_LOSSY_OPERATOR=SVD_TRUNC_MERGE",
+      "on_failure": "OPERATOR_AXIS_INSUFFICIENT",
+      "note": "00 §35: run only if DARE fails, unless O3 was separately budgeted as a pre-result secondary control. If O3 also fails, apply §24A.7."
+    },
+    {
+      "stage_id": "P0-D3",
+      "title": "Conditional O3 spectral-truncation ladder",
+      "depends_on": ["P0-D2"],
+      "requires_selected_operator": "SVD_TRUNC_MERGE",
+      "calendar_class": "POST_MVRS_EXPANSION",
+      "gate": "00 §28B spectral-truncation ladder",
+      "on_failure": "BLOCK_O3_TAIL_CLAIM",
+      "note": "00 §35: eligible only once O3 is the selected primary lossy operator."
+    },
+    {
+      "stage_id": "P0-C4",
+      "title": "O3 incomplete-lineage recovery validation",
+      "depends_on": ["P0-D2"],
+      "requires_selected_operator": "SVD_TRUNC_MERGE",
+      "calendar_class": "POST_MVRS_EXPANSION",
+      "gate": "00 §25 truncated-source recovery validation",
+      "on_pass": "ACTIVATE_CONDITIONAL_INCOMPLETE_LOSSY_CELLS",
+      "on_failure": "KEEP_CONDITIONAL_CELLS_GATED",
+      "note": "00 §25, §36: C14/C15/C17/C18 become RUN_REPRODUCTION only when O3 is selected AND this passes."
+    },
+    {
+      "stage_id": "P0-E",
+      "title": "Derivative-parent deployment scan",
+      "depends_on": ["P0-F"],
+      "calendar_class": "POST_MVRS_EXPANSION",
+      "gate": "00 §34 derivative-parent reuse statistic",
+      "on_failure": "NARROW_THREAT_MODEL_WORDING",
+      "note": "00 §34C.1A: deferred under CALENDAR_COMPRESSED_MVRS; may run in parallel only if it does not threaten P1/MVRS evidence."
+    }
+  ]
+}

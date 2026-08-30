@@ -1,0 +1,55 @@
+{
+  "authority": "00 §25, §36.3; 01 §17, §39 S09",
+  "description": "The registered coefficient schedules. A registry row names a schedule; it never carries a coefficient vector of its own, and no caller may supply one. The `fixed` schedule is a PRE-RESULT DESIGN COMPLETION: 00 §36 registers the fixed-alpha lineage without assigning a numeric coefficient, so alpha = 0.50 is chosen here, before any real scientific outcome has been opened, to make the already-registered fixed-schedule cells executable. It is not a value taken from the closed measurement spec [AUTH: 00 §36.3; 01 §17].",
+  "schedule_version": {
+    "status": "FROZEN",
+    "value": "s09.coefficient-schedules.v1",
+    "note": "Bumped whenever any registered schedule changes."
+  },
+  "fixed": {
+    "status": "FROZEN",
+    "value": {
+      "alpha": 0.5,
+      "per_descendant": true,
+      "provenance": "PRE_RESULT_DESIGN_COMPLETION"
+    },
+    "note": "PRE_RESULT_DESIGN_COMPLETION, not a value from the closed measurement spec. 00 §36 registers the fixed-alpha lineage but assigns no numeric coefficient, and no accepted config supplies one, so it is completed here before any real result is opened. alpha = 0.50 is symmetric equal-parent weighting: a neutral baseline that privileges neither the protected constituent nor the partner, and avoids the coefficient amplification that an extreme alpha would introduce into the rescaling identity. It resolves deterministically to alpha_i = 0.50 for every one of a cell's k descendants."
+  },
+  "k2-reference": {
+    "status": "FROZEN",
+    "value": {
+      "k": 2,
+      "alpha": [
+        0.35,
+        0.65
+      ]
+    },
+    "note": "00 §25 / §36.3 k = 2 reference schedule."
+  },
+  "spread-matched": {
+    "status": "FROZEN",
+    "value": {
+      "k": 4,
+      "alpha": [
+        0.35,
+        0.45,
+        0.55,
+        0.65
+      ]
+    },
+    "note": "00 §25 / §36.3 k = 4 spread-matched schedule."
+  },
+  "wide-spread": {
+    "status": "FROZEN",
+    "value": {
+      "k": 4,
+      "alpha": [
+        0.25,
+        0.4,
+        0.6,
+        0.75
+      ]
+    },
+    "note": "00 §25 / §36.3 k = 4 wide-spread schedule. Linear-only; 00 §36.1 does not duplicate it under the lossy operator."
+  }
+}

@@ -1,0 +1,309 @@
+{
+  "authority": "00 §36, §36.1, §36.2, §36.3; 01 §17, §39 S09",
+  "description": "The frozen P1 cell registry, transcribed from 00 §36.1 and §36.2. Exactly 29 rows: 19 calibration and 10 representative-DP. The launcher resolves a registered row; it never constructs one. Adding a row changes registry_sha256 and requires a pre-result revision or SPEC_DEVIATION outside ordinary launcher use [AUTH: 00 §36].",
+  "registry_version": "s09.p1-registry.v1",
+  "calibration": [
+    {
+      "cell_id": "C01",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 1,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "RUN_CONTROL",
+      "interpretation": "closed-form oracle"
+    },
+    {
+      "cell_id": "C02",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 2,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "RUN_CONTROL",
+      "interpretation": "algebraic control"
+    },
+    {
+      "cell_id": "C03",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 4,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "RUN_CONTROL",
+      "interpretation": "algebraic control"
+    },
+    {
+      "cell_id": "C04",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 1,
+      "lineage": "Z-INCOMPLETE-FIXED",
+      "schedule": "fixed",
+      "status": "STRUCTURAL_NA",
+      "interpretation": "unknown partner, one mixture"
+    },
+    {
+      "cell_id": "C05",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 2,
+      "lineage": "Z-INCOMPLETE-FIXED",
+      "schedule": "fixed",
+      "status": "RUN_REPRODUCTION",
+      "interpretation": "Spectral/common-source"
+    },
+    {
+      "cell_id": "C06",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 4,
+      "lineage": "Z-INCOMPLETE-FIXED",
+      "schedule": "fixed",
+      "status": "RUN_REPRODUCTION",
+      "interpretation": "Spectral/common-source"
+    },
+    {
+      "cell_id": "C07",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 1,
+      "lineage": "Z-INCOMPLETE-VARYING-KNOWN",
+      "schedule": null,
+      "status": "STRUCTURAL_NA",
+      "interpretation": "unknown partner, one mixture"
+    },
+    {
+      "cell_id": "C08",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 2,
+      "lineage": "Z-INCOMPLETE-VARYING-KNOWN",
+      "schedule": "k2-reference",
+      "status": "RUN_REPRODUCTION",
+      "interpretation": "rescaled shared-source stress control"
+    },
+    {
+      "cell_id": "C09M",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 4,
+      "lineage": "Z-INCOMPLETE-VARYING-KNOWN",
+      "schedule": "spread-matched",
+      "status": "RUN_REPRODUCTION",
+      "interpretation": "k contrast at matched beta spread"
+    },
+    {
+      "cell_id": "C09W",
+      "regime": "CALIBRATION",
+      "operator": "LINEAR",
+      "k": 4,
+      "lineage": "Z-INCOMPLETE-VARYING-KNOWN",
+      "schedule": "wide-spread",
+      "status": "RUN_REPRODUCTION",
+      "interpretation": "heteroscedastic stress condition"
+    },
+    {
+      "cell_id": "C10",
+      "regime": "CALIBRATION",
+      "operator": "LOSSY",
+      "k": 1,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "OPERATOR_GATED",
+      "interpretation": "DARE or O3 selected pre-result"
+    },
+    {
+      "cell_id": "C11",
+      "regime": "CALIBRATION",
+      "operator": "LOSSY",
+      "k": 2,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "OPERATOR_GATED",
+      "interpretation": "DARE or O3 selected pre-result"
+    },
+    {
+      "cell_id": "C12",
+      "regime": "CALIBRATION",
+      "operator": "LOSSY",
+      "k": 4,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "OPERATOR_GATED",
+      "interpretation": "DARE or O3 selected pre-result"
+    },
+    {
+      "cell_id": "C13",
+      "regime": "CALIBRATION",
+      "operator": "LOSSY",
+      "k": 1,
+      "lineage": "Z-INCOMPLETE-FIXED",
+      "schedule": "fixed",
+      "status": "STRUCTURAL_NA",
+      "interpretation": "unknown partner, one mixture"
+    },
+    {
+      "cell_id": "C14",
+      "regime": "CALIBRATION",
+      "operator": "LOSSY",
+      "k": 2,
+      "lineage": "Z-INCOMPLETE-FIXED",
+      "schedule": "fixed",
+      "status": "CONDITIONAL",
+      "interpretation": "O3: RUN_REPRODUCTION; DARE: METHOD_GATED"
+    },
+    {
+      "cell_id": "C15",
+      "regime": "CALIBRATION",
+      "operator": "LOSSY",
+      "k": 4,
+      "lineage": "Z-INCOMPLETE-FIXED",
+      "schedule": "fixed",
+      "status": "CONDITIONAL",
+      "interpretation": "O3: RUN_REPRODUCTION; DARE: METHOD_GATED"
+    },
+    {
+      "cell_id": "C16",
+      "regime": "CALIBRATION",
+      "operator": "LOSSY",
+      "k": 1,
+      "lineage": "Z-INCOMPLETE-VARYING-KNOWN",
+      "schedule": null,
+      "status": "STRUCTURAL_NA",
+      "interpretation": "unknown partner, one mixture"
+    },
+    {
+      "cell_id": "C17",
+      "regime": "CALIBRATION",
+      "operator": "LOSSY",
+      "k": 2,
+      "lineage": "Z-INCOMPLETE-VARYING-KNOWN",
+      "schedule": "k2-reference",
+      "status": "CONDITIONAL",
+      "interpretation": "O3: RUN_REPRODUCTION; DARE: METHOD_GATED"
+    },
+    {
+      "cell_id": "C18",
+      "regime": "CALIBRATION",
+      "operator": "LOSSY",
+      "k": 4,
+      "lineage": "Z-INCOMPLETE-VARYING-KNOWN",
+      "schedule": "spread-matched",
+      "status": "CONDITIONAL",
+      "interpretation": "O3: RUN_REPRODUCTION; DARE: METHOD_GATED"
+    }
+  ],
+  "representative_dp": [
+    {
+      "cell_id": "D01",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LINEAR",
+      "k": 1,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "RUN_CONTROL",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    },
+    {
+      "cell_id": "D02",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LINEAR",
+      "k": 2,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "RUN_CONTROL",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    },
+    {
+      "cell_id": "D03",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LINEAR",
+      "k": 4,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "RUN_CONTROL",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    },
+    {
+      "cell_id": "D04",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LINEAR",
+      "k": 2,
+      "lineage": "Z-INCOMPLETE-FIXED",
+      "schedule": "fixed",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "RUN_REPRODUCTION",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    },
+    {
+      "cell_id": "D05",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LINEAR",
+      "k": 4,
+      "lineage": "Z-INCOMPLETE-FIXED",
+      "schedule": "fixed",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "RUN_REPRODUCTION",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    },
+    {
+      "cell_id": "D06",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LINEAR",
+      "k": 2,
+      "lineage": "Z-INCOMPLETE-VARYING-KNOWN",
+      "schedule": "k2-reference",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "RUN_REPRODUCTION",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    },
+    {
+      "cell_id": "D07",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LINEAR",
+      "k": 4,
+      "lineage": "Z-INCOMPLETE-VARYING-KNOWN",
+      "schedule": "spread-matched",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "RUN_REPRODUCTION",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    },
+    {
+      "cell_id": "D08",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LOSSY",
+      "k": 1,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "OPERATOR_GATED",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    },
+    {
+      "cell_id": "D09",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LOSSY",
+      "k": 2,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "OPERATOR_GATED",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    },
+    {
+      "cell_id": "D10",
+      "regime": "REPRESENTATIVE_DP",
+      "operator": "LOSSY",
+      "k": 4,
+      "lineage": "Z-HIGH",
+      "schedule": "fixed",
+      "status": "DP_SMOKE_ONLY",
+      "status_after_dp_seed_set": "OPERATOR_GATED",
+      "interpretation": "one-seed DP execution is smoke-only; inferential status requires the 3-seed DP set"
+    }
+  ]
+}
