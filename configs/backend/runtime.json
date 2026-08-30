@@ -1,0 +1,183 @@
+{
+  "authority": "01 \u00a78, \u00a78B, \u00a78C, \u00a78G, \u00a710, \u00a712, \u00a716, \u00a717; 02 \u00a7C6, \u00a7C7",
+  "description": "Production HF/PEFT backend runtime policy. Every value that changes what the backend executes lives here, so the resolved config hash covers it. Model revisions themselves are NOT here: they are per-model identities carried by manifests/models/<alias>.json and stay UNRESOLVED_NOT_DOWNLOADED until acquisition [AUTH: 01 \u00a78G].",
+  "backend_version": {
+    "status": "FROZEN",
+    "value": "backend.hf-peft.v1",
+    "note": "Bumped whenever the executable backend contract changes."
+  },
+  "model_loader": {
+    "status": "FROZEN",
+    "value": "transformers.AutoModelForCausalLM.from_pretrained",
+    "note": "01 \u00a78C. One canonical production loader for the locked text-only research path."
+  },
+  "tokenizer_loader": {
+    "status": "FROZEN",
+    "value": "transformers.AutoTokenizer.from_pretrained",
+    "note": "01 \u00a78C."
+  },
+  "training_precision": {
+    "status": "FROZEN",
+    "value": "bfloat16",
+    "note": "01 \u00a710. Training and ordinary model forward run in BF16 on the H100 profile. Scientific merge/recovery arithmetic is separately frozen at float32; statistics accumulate in float64."
+  },
+  "forward_precision": {
+    "status": "FROZEN",
+    "value": "bfloat16",
+    "note": "01 \u00a710. The scoring forward pass. Recorded explicitly rather than left to an autocast default."
+  },
+  "statistic_precision": {
+    "status": "FROZEN",
+    "value": "float64",
+    "note": "01 \u00a710. Token-level reductions accumulate in float64; the backend never returns a bf16 scalar as a statistic."
+  },
+  "fixture_precision": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": "float32",
+    "note": "CPU fixture profile. Structurally distinct from the H100 production profile and refused on an evidentiary path."
+  },
+  "permitted_precisions": {
+    "status": "FROZEN",
+    "value": [
+      "bfloat16",
+      "float32"
+    ],
+    "note": "01 \u00a710. float16 is not permitted for the research path; see forbidden_load_options for quantized modes."
+  },
+  "forbidden_load_options": {
+    "status": "FROZEN",
+    "value": [
+      "load_in_8bit",
+      "load_in_4bit",
+      "quantization_config",
+      "gptq",
+      "awq",
+      "bnb_4bit_compute_dtype",
+      "bnb_4bit_quant_type"
+    ],
+    "note": "01 \u00a78C. A checkpoint that requires quantization fails compatibility; it is never silently substituted."
+  },
+  "device_fallback_policy": {
+    "status": "FROZEN",
+    "value": "EXPLICIT_NO_SILENT_FALLBACK",
+    "note": "01 \u00a712. A requested device or dtype that is unavailable raises; it never degrades quietly to another one."
+  },
+  "trust_remote_code": {
+    "status": "FROZEN",
+    "value": false,
+    "note": "01 \u00a78C. Version-controlled and false by default. A model whose architecture genuinely requires remote code must have that recorded here before it can load."
+  },
+  "local_files_only": {
+    "status": "FROZEN",
+    "value": true,
+    "note": "Scientifically immaterial: it controls where bytes come from, not what is computed. True by default so no evidentiary path reaches the network implicitly."
+  },
+  "attn_implementation": {
+    "status": "FROZEN",
+    "value": "eager",
+    "note": "01 \u00a712. Pinned so a kernel change cannot move the logits without moving the backend identity."
+  },
+  "architecture_mapping_version": {
+    "status": "FROZEN",
+    "value": "s00.lora-target-mapping.v1",
+    "note": "01 \u00a78B. Bumped whenever any family's module mapping changes; bound into every adapter manifest."
+  },
+  "peft_task_type": {
+    "status": "FROZEN",
+    "value": "CAUSAL_LM",
+    "note": "01 \u00a78B. The research path is a causal language model."
+  },
+  "peft_bias_policy": {
+    "status": "FROZEN",
+    "value": "none",
+    "note": "01 \u00a78B. Biases are not adapted; the induced update is exactly \u0394W = BA."
+  },
+  "lora_scaling_rule": {
+    "status": "FROZEN",
+    "value": "ALPHA_OVER_RANK",
+    "note": "PEFT's own semantics: scaling = lora_alpha / r, applied exactly once when the induced update is formed. use_rslora is not enabled."
+  },
+  "use_rslora": {
+    "status": "FROZEN",
+    "value": false,
+    "note": "Rank-stabilised scaling would change the induced update; disabled so lora_scaling_rule is the whole rule."
+  },
+  "adapter_weight_filename": {
+    "status": "FROZEN",
+    "value": "adapter_model.safetensors",
+    "note": "The PEFT save layout the production persistence path reads and writes."
+  },
+  "adapter_config_filename": {
+    "status": "FROZEN",
+    "value": "adapter_config.json",
+    "note": "The PEFT save layout."
+  },
+  "lora_factor_suffixes": {
+    "status": "FROZEN",
+    "value": [
+      "lora_A.weight",
+      "lora_B.weight"
+    ],
+    "note": "PEFT's factor tensor naming. Exactly one A and one B per target; anything else is refused."
+  },
+  "peft_module_prefix": {
+    "status": "FROZEN",
+    "value": "base_model.model.",
+    "note": "PEFT prefixes every wrapped module; stripped to recover the canonical base parameter name."
+  },
+  "truncation_policy": {
+    "status": "FROZEN",
+    "value": "RIGHT_TRUNCATE_TO_MAX_SEQUENCE_LENGTH",
+    "note": "02 \u00a7C7. Bound into the tokenizer identity; a change moves the cache key."
+  },
+  "padding_policy": {
+    "status": "FROZEN",
+    "value": "RIGHT_PAD_EXCLUDED_FROM_LOSS",
+    "note": "00 \u00a714.2. Padding never enters a reduction."
+  },
+  "loss_mask_policy": {
+    "status": "FROZEN",
+    "value": "ALL_NON_PAD_CONTINUATION_TOKENS",
+    "note": "00 \u00a714.1, \u00a714.2. The scored record is the continuation; padding and the unshiftable first position are excluded and nothing else is."
+  },
+  "causal_shift": {
+    "status": "FROZEN",
+    "value": "LOGITS_SHIFTED_LEFT_LABELS_SHIFTED_RIGHT",
+    "note": "The standard causal-LM alignment: position t's logits predict token t+1."
+  },
+  "dp_primary_alias": {
+    "status": "FROZEN",
+    "value": "llama_3_2_3b",
+    "note": "01 \u00a78E. meta-llama/Llama-3.2-3B is the DP primary."
+  },
+  "dp_secondary_alias": {
+    "status": "FROZEN",
+    "value": "qwen3_5_4b_base",
+    "note": "01 \u00a78E. Secondary only if the DP compatibility smoke later passes without changing any frozen scientific rule."
+  },
+  "dp_engine": {
+    "status": "FROZEN",
+    "value": "opacus.GradSampleModule",
+    "note": "01 \u00a78E. The production per-sample gradient engine. This task wires it; it runs no DP training."
+  },
+  "backend_integrated": {
+    "status": "FROZEN",
+    "value": false,
+    "note": "02 \u00a7C6. Stays false until backend contract execution, the full synthetic rerun, cache assertions, H100 GPU smoke and the 1,000-sequence benchmark have all passed."
+  },
+  "suite_scope": {
+    "status": "FROZEN",
+    "value": "STATISTICAL_STACK_ONLY",
+    "note": "02 \u00a7C6."
+  },
+  "fallback_target_policy_authorized": {
+    "status": "FROZEN",
+    "value": false,
+    "note": "01 \u00a78B.1. LANGUAGE_TRUNK_ALL_COMMON_LINEAR remains gated on the P0-A measurement-power condition and is not activated by this backend."
+  },
+  "c1_exact_inversion_limit": {
+    "status": "FROZEN",
+    "value": 1e-05,
+    "note": "00 \u00a725 P0-C1. The compatibility contract's inversion row reuses the already-frozen S08 criterion rather than inventing a second one."
+  }
+}

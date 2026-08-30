@@ -26,6 +26,12 @@ from src.provenance.hashing import (
 )
 
 #: Scoring source whose bytes define executable scoring semantics [AUTH: 02 §C7].
+#:
+#: 02 §C7 requires the identity to cover the HF/PEFT backend adapter, the token
+#: masking/reduction logic, the reference-loss implementation and the Min-K implementation.
+#: The scorer half was always here; `src/backend/**` is the production execution half, and a
+#: change to the causal shift, the loss mask, the loader policy or the adapter extraction
+#: moves this hash exactly as a change to the reducer does.
 SCORING_SOURCE_FILES: Final[tuple[str, ...]] = (
     "src/scoring/roc.py",
     "src/scoring/reference.py",
@@ -34,6 +40,11 @@ SCORING_SOURCE_FILES: Final[tuple[str, ...]] = (
     "src/scoring/pooled.py",
     "src/scoring/cache.py",
     "src/scoring/backends.py",
+    "src/backend/forward.py",
+    "src/backend/loader.py",
+    "src/backend/scoring_backend.py",
+    "src/backend/tokenization.py",
+    "src/backend/adapters.py",
 )
 
 CACHE_SCHEMA: Final = "s03.score-cache.v2"
@@ -47,8 +58,20 @@ class CacheError(RuntimeError):
     """The cache refused to serve or store an entry."""
 
 
+#: The resolved backend runtime document, whose material settings change what a forward pass
+#: computes without changing a source byte [AUTH: 02 §C7].
+BACKEND_RUNTIME_CONFIG: Final = "configs/backend/runtime.json"
+
+
 def scoring_code_hash(root: Path, resolved_scoring_config: JSONDocument) -> str:
-    """SHA256 over the scoring source plus the resolved scoring config [AUTH: 02 §C7]."""
+    """SHA256 over the scoring source, the resolved scoring config AND the backend runtime.
+
+    02 §C7 requires the identity to change whenever executable scoring semantics change.
+    Source bytes are only half of that: the attention implementation, the forward precision,
+    `trust_remote_code`, the LoRA scaling rule and `use_rslora` all live in
+    `configs/backend/runtime.json`, and each of them changes the numbers. So the canonical
+    RESOLVED backend document is hashed in too — not its path, which would prove nothing.
+    """
     parts: list[str] = []
     for relative in SCORING_SOURCE_FILES:
         path = root / relative
@@ -56,7 +79,31 @@ def scoring_code_hash(root: Path, resolved_scoring_config: JSONDocument) -> str:
             raise CacheError(f"scoring source missing, so its identity is unknown: {relative}")
         parts.append(f"{relative}={sha256_file(path)}")
     parts.append(f"config={sha256_canonical(dict(resolved_scoring_config))}")
+    parts.append(f"backend_runtime={backend_runtime_config_sha256(root)}")
     return sha256_bytes("\n".join(parts).encode("utf-8"))
+
+
+#: What the identity records when no backend runtime config is present. A distinct value, not
+#: an empty string: "no backend configuration" and "this backend configuration" must hash
+#: differently, so a tree that gains the config invalidates every score taken without it.
+BACKEND_RUNTIME_ABSENT: Final = "BACKEND_RUNTIME_CONFIG_ABSENT"
+
+
+def backend_runtime_config_sha256(root: Path) -> str:
+    """The resolved backend runtime identity, or an explicit absence marker.
+
+    Resolved through Block A exactly as every other config is, so a stateful mapping or a
+    shadowing default cannot make the hashed document differ from the executed one. Absence is
+    recorded rather than raised: this function's job is to describe what the tree carries, and
+    a run that actually needs the backend fails at the point of use, not here.
+    """
+    path = root / BACKEND_RUNTIME_CONFIG
+    if not path.is_file():
+        return BACKEND_RUNTIME_ABSENT
+    from src.provenance.config import resolve_config
+
+    configs = root / "configs"
+    return sha256_canonical(resolve_config(path, config_root=configs))
 
 
 @dataclass(frozen=True)
