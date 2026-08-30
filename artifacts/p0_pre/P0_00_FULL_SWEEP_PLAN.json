@@ -1,0 +1,919 @@
+{
+  "full_sweep_code_ready": false,
+  "missing_execution_bindings": [
+    "src.training.trainer:train_production_lora"
+  ],
+  "n_tasks": 55,
+  "plan_sha256": "e448ea6b9e96bafe6c75fa5f0d866d1a06059b648dcf075a1da9ad4ad75fa867",
+  "readiness_counts": {
+    "GATED_BY_RESULT": 40,
+    "MISSING_EXECUTION_BINDING": 9,
+    "READY": 6
+  },
+  "registry_sha256": "e8dde926a63ec0d32c59fcf9bd8412b51038a8974b5cd9d561f3442827f7a89d",
+  "schema": "s10.full-sweep-plan.v1",
+  "selected_primary_lossy_operator": "UNRESOLVED",
+  "tasks": [
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [],
+      "detail": "the sequence permits this",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "SCORER_ENGINE=VERIFIED, ANALYSIS_DRY_RUN=PASS, CROSSFIT_NEGATIVE_CONTROL=PASS, CACHE_ASSERTIONS=PASS",
+      "model_alias": null,
+      "readiness": "READY",
+      "resolved_config_sha256": "f2f6ed4cf0f524f503fd8f672e5f2dc3d5e92c0dcf5ce9662f922f3a7af0b0e8",
+      "seed": null,
+      "stage": "P0-PRE",
+      "task_id": "stage.P0-PRE"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE"
+      ],
+      "detail": "P0-PRE is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "P0_00_COMPUTE_BUDGET frozen; fixed theta_0 reference outputs cached once",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "ff8d4e2c318a2fde1b266a438e4827d07c210013ce38da131d739da4f9e25dd7",
+      "seed": null,
+      "stage": "P0-0",
+      "task_id": "stage.P0-0"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-0"
+      ],
+      "detail": "P0-0 is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "00 \u00a76.4 blind control",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "9f945adc02b7a7ab01b615d5507eda381505036920e5ff36a94dca1135d46b73",
+      "seed": null,
+      "stage": "P0-A0",
+      "task_id": "stage.P0-A0"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-A0"
+      ],
+      "detail": "P0-A0 is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "00 \u00a718 eligibility, applied separately per arm",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "0a9da3f7225e87c7c33b0d2222eda72a99554cc95688f37cc1fd5757d475f8a7",
+      "seed": null,
+      "stage": "P0-A",
+      "task_id": "stage.P0-A"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-A"
+      ],
+      "detail": "P0-A is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "00 \u00a727 consequence branch",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "a5f8821285c28803037f18ee98d778354a7730634ce8e5b7c6253812d577faf6",
+      "seed": null,
+      "stage": "P0-B",
+      "task_id": "stage.P0-B"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-B"
+      ],
+      "detail": "P0-B is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "e_F <= 1e-5",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "2e2df49ae8dc115c5ad09f09c36426bc974db57f082d4c2af2d1c5d99f77b8fc",
+      "seed": null,
+      "stage": "P0-C1",
+      "task_id": "stage.P0-C1"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-C1"
+      ],
+      "detail": "P0-C1 is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "00 \u00a728A primary rank-matched and secondary full-rank isotropic ladders",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "21cc3697e4ada07d6e086ad6622250c0d0fd421ddb1dd75a0611f33816425143",
+      "seed": null,
+      "stage": "P0-F",
+      "task_id": "stage.P0-F"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-F"
+      ],
+      "detail": "P0-F is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "published-style baseline must outperform the naive shared mean; k in {2,4}",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "af1720cbe3d1169050ebd42330cecdd7bc34d3db10f5b30b5168ef9a8d537c52",
+      "seed": null,
+      "stage": "P0-C2",
+      "task_id": "stage.P0-C2"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-F"
+      ],
+      "detail": "P0-F is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "00 \u00a724 DARE utility gate",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "50546e49ee018298af6639e24ba393d96143ff8341cd39ce226fdf027d7404e8",
+      "seed": null,
+      "stage": "P0-D",
+      "task_id": "stage.P0-D"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-D"
+      ],
+      "detail": "P0-D is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "00 \u00a724A utility and non-triviality gates",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "8156dfbba973b71ac4a68ec73cb5c680a32fdad5c6e26e2ff24c548ccb8c27ec",
+      "seed": null,
+      "stage": "P0-D2",
+      "task_id": "stage.P0-D2"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-D2"
+      ],
+      "detail": "P0-D2 is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "00 \u00a728B spectral-truncation ladder",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "e4632d683a32999e22c575da73b605074e345cc396d1fc1bc0c00206149091ee",
+      "seed": null,
+      "stage": "P0-D3",
+      "task_id": "stage.P0-D3"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-D2"
+      ],
+      "detail": "P0-D2 is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "00 \u00a725 truncated-source recovery validation",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "90a8bb38f961a8f4ed51c9ab3cdb8afbfba3bce786ed25543773de8cc7b05ed8",
+      "seed": null,
+      "stage": "P0-C4",
+      "task_id": "stage.P0-C4"
+    },
+    {
+      "artifact_kind": "GATE_EVIDENCE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-F"
+      ],
+      "detail": "P0-F is UNRESOLVED; 00 \u00a735 runs it first",
+      "execution_binding": "src.experiments.stages:stage_eligibility",
+      "gate": "00 \u00a734 derivative-parent reuse statistic",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "83904086f88d61efa10fd22c6b555e20203832801b43207b0e02815d7ac35723",
+      "seed": null,
+      "stage": "P0-E",
+      "task_id": "stage.P0-E"
+    },
+    {
+      "artifact_kind": "ADAPTER",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE",
+        "stage.P0-0"
+      ],
+      "detail": "canary-containing calibration seed [AUTH: 00 \u00a77.5]",
+      "execution_binding": "src.training.trainer:train_production_lora",
+      "gate": "P0-PRE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "MISSING_EXECUTION_BINDING",
+      "resolved_config_sha256": "4959a6bc073496eff53b1b1ed09bff362f95af406c2d9796de462e08e4d7e627",
+      "seed": 101,
+      "stage": "S06-TRAIN",
+      "task_id": "train.qwen3_5_4b_base.canary.101"
+    },
+    {
+      "artifact_kind": "ADAPTER",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE",
+        "stage.P0-0"
+      ],
+      "detail": "matched no-canary control [AUTH: 00 \u00a77.5]",
+      "execution_binding": "src.training.trainer:train_production_lora",
+      "gate": "P0-PRE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "MISSING_EXECUTION_BINDING",
+      "resolved_config_sha256": "6409bb002ae13425a582a9b1d980df89407c4e073ceecd2bb140dd4d23baa162",
+      "seed": 101,
+      "stage": "S06-TRAIN",
+      "task_id": "train.qwen3_5_4b_base.control.101"
+    },
+    {
+      "artifact_kind": "ADAPTER",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE",
+        "stage.P0-0"
+      ],
+      "detail": "canary-containing calibration seed [AUTH: 00 \u00a77.5]",
+      "execution_binding": "src.training.trainer:train_production_lora",
+      "gate": "P0-PRE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "MISSING_EXECUTION_BINDING",
+      "resolved_config_sha256": "86553df0809f11a0ac3fe98440645acd2d0606dac5e115f06f4cf98adfb9fae1",
+      "seed": 202,
+      "stage": "S06-TRAIN",
+      "task_id": "train.qwen3_5_4b_base.canary.202"
+    },
+    {
+      "artifact_kind": "ADAPTER",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE",
+        "stage.P0-0"
+      ],
+      "detail": "matched no-canary control [AUTH: 00 \u00a77.5]",
+      "execution_binding": "src.training.trainer:train_production_lora",
+      "gate": "P0-PRE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "MISSING_EXECUTION_BINDING",
+      "resolved_config_sha256": "7a45a702628ec0d7077fb674712b777b4163d2e7151eedb1b790eabe89007746",
+      "seed": 202,
+      "stage": "S06-TRAIN",
+      "task_id": "train.qwen3_5_4b_base.control.202"
+    },
+    {
+      "artifact_kind": "ADAPTER",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE",
+        "stage.P0-0"
+      ],
+      "detail": "canary-containing calibration seed [AUTH: 00 \u00a77.5]",
+      "execution_binding": "src.training.trainer:train_production_lora",
+      "gate": "P0-PRE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "MISSING_EXECUTION_BINDING",
+      "resolved_config_sha256": "6c3fae0e4cfa673d7e8ab03eea5f575fcc4b04083f73d65500095c4d9fee56df",
+      "seed": 303,
+      "stage": "S06-TRAIN",
+      "task_id": "train.qwen3_5_4b_base.canary.303"
+    },
+    {
+      "artifact_kind": "ADAPTER",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE",
+        "stage.P0-0"
+      ],
+      "detail": "matched no-canary control [AUTH: 00 \u00a77.5]",
+      "execution_binding": "src.training.trainer:train_production_lora",
+      "gate": "P0-PRE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "MISSING_EXECUTION_BINDING",
+      "resolved_config_sha256": "35d08023c19cf26ced856c3c1229022c0d9eb1a0be031da3ea581c3b197db768",
+      "seed": 303,
+      "stage": "S06-TRAIN",
+      "task_id": "train.qwen3_5_4b_base.control.303"
+    },
+    {
+      "artifact_kind": "ADAPTER",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE"
+      ],
+      "detail": "representative DP arm; the accountant is src.dp.mechanism.account",
+      "execution_binding": "src.training.trainer:train_production_lora",
+      "gate": "P0-PRE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "MISSING_EXECUTION_BINDING",
+      "resolved_config_sha256": "ec88fecd29fdea253f429c1f7ca8d63cbcf69aca4180a74e98564c7ce37ee14a",
+      "seed": 101,
+      "stage": "S06-TRAIN-DP",
+      "task_id": "train.dp.qwen3_5_4b_base.101"
+    },
+    {
+      "artifact_kind": "ADAPTER",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE"
+      ],
+      "detail": "representative DP arm; the accountant is src.dp.mechanism.account",
+      "execution_binding": "src.training.trainer:train_production_lora",
+      "gate": "P0-PRE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "MISSING_EXECUTION_BINDING",
+      "resolved_config_sha256": "e5506e56cf7e7edfcd39288f1d1e3356f0106477dc0100d42067146576222070",
+      "seed": 202,
+      "stage": "S06-TRAIN-DP",
+      "task_id": "train.dp.qwen3_5_4b_base.202"
+    },
+    {
+      "artifact_kind": "ADAPTER",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-PRE"
+      ],
+      "detail": "representative DP arm; the accountant is src.dp.mechanism.account",
+      "execution_binding": "src.training.trainer:train_production_lora",
+      "gate": "P0-PRE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "MISSING_EXECUTION_BINDING",
+      "resolved_config_sha256": "d760f82a74210c28582deb3428737352dece81869c95226e3ff5b5e063f0190f",
+      "seed": 303,
+      "stage": "S06-TRAIN-DP",
+      "task_id": "train.dp.qwen3_5_4b_base.303"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C01",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "every registered precondition for this row is satisfied",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "RUNNABLE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "READY",
+      "resolved_config_sha256": "6becb67ddeac9d44c2b3c93d994662b02ee0434baaa4e00bd4b8e5d52a12a74f",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C01.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C02",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "every registered precondition for this row is satisfied",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "RUNNABLE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "READY",
+      "resolved_config_sha256": "eb2b0e5316515390c774473390a11cac6a88d22d42c15e6ac2cb5a46d8d6bc49",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C02.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C03",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "every registered precondition for this row is satisfied",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "RUNNABLE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "READY",
+      "resolved_config_sha256": "a46c8f6e170957b030fab903d8a40059e4f39895562fdaa1b0b7d7739a8b65df",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C03.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "RECOVERY_RESULT",
+      "cell_id": "C04",
+      "depends_on": [],
+      "detail": "unknown partner, one mixture: skipped, never run [AUTH: 00 \u00a736.1]",
+      "execution_binding": "(none: permanently non-executable)",
+      "gate": "STRUCTURAL_NA",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "5ec895da2ce5167ec69f76672b8456507452a594defa5414e4d60d6578e0fc7a",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C04"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C05",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "every registered precondition for this row is satisfied",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "RUNNABLE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "READY",
+      "resolved_config_sha256": "91028a9986ca54e64ee13fe746ee85fada9cbcbc38bab82570ef444c500296c3",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C05.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C06",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "every registered precondition for this row is satisfied",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "RUNNABLE",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "READY",
+      "resolved_config_sha256": "a8fab2d79e6296ec6de1a8e401ff9b414ce8e22a6e9be7fe618f7d60d45c65da",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C06.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "RECOVERY_RESULT",
+      "cell_id": "C07",
+      "depends_on": [],
+      "detail": "unknown partner, one mixture: skipped, never run [AUTH: 00 \u00a736.1]",
+      "execution_binding": "(none: permanently non-executable)",
+      "gate": "STRUCTURAL_NA",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "928071da04042a0590a1cfb81ffefaec8db0764175204245dc3f2cef4eba42c4",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C07"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C08",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "known-varying-alpha cells activate only after the fixed common-source baseline P0-C2 is reproduced under the frozen implementation [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "VARYING_ALPHA_AWAITS_P0_C2",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "c036448e98750715f4c45471471c1d8da101cff4c95c8326c49850c66279ce6f",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C08.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C09M",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "known-varying-alpha cells activate only after the fixed common-source baseline P0-C2 is reproduced under the frozen implementation [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "VARYING_ALPHA_AWAITS_P0_C2",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "2375aac2ababa032e551f57086ae25bf2880a975327d6e35e4afc92efcb96e44",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C09M.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C09W",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "known-varying-alpha cells activate only after the fixed common-source baseline P0-C2 is reproduced under the frozen implementation [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "VARYING_ALPHA_AWAITS_P0_C2",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "4712f3c2e5d5db4bfe7812ca598ea365929b81c19ce326d98850d74c402033a9",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C09W.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C10",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "44abaa8235aa5803ae05b832760e9d531998cc2cf784121f5428c4b9560f960f",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C10.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C11",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "31de50e4e0cffcae00d4d008ca12bafe987bb013c8c65caea6fc6c618906f61c",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C11.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C12",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "8e6006a44da4acb5ef96214f9018ac9a9c4fa92ec699481290b5073d1316532c",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C12.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "RECOVERY_RESULT",
+      "cell_id": "C13",
+      "depends_on": [],
+      "detail": "unknown partner, one mixture: skipped, never run [AUTH: 00 \u00a736.1]",
+      "execution_binding": "(none: permanently non-executable)",
+      "gate": "STRUCTURAL_NA",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "4173449dacc799bb583f2cd81a262a4956061c98b5d8e9d66ea4f77587be4aae",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C13"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C14",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "57e5636ecf044d20b086c5223a0282537d2a8640e6fa306d9a74ecf53b1944cf",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C14.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C15",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "774718a2b681afeb5f1ce3e528e742a699d6d1e6729652add8fadd6eb3e7624f",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C15.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "RECOVERY_RESULT",
+      "cell_id": "C16",
+      "depends_on": [],
+      "detail": "unknown partner, one mixture: skipped, never run [AUTH: 00 \u00a736.1]",
+      "execution_binding": "(none: permanently non-executable)",
+      "gate": "STRUCTURAL_NA",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "a862632b4a9b562d6c60daacb1562a710522bd0524950327dfa73f18662fb9ce",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C16"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C17",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "54c93619eaec83a3b141b0d79a79d7aa5f1ee44263033d3835f13a701826acb1",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C17.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "C18",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "96c0af990fa5e1d83a8cb91afe2691c61135dd6ff080f8aef44cbf3f4d46e982",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.C18.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D01",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the DP seed set [] is not the registered [101, 202, 303]; a one-seed result never becomes inferential [AUTH: 00 \u00a736.2]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "DP_SMOKE_ONLY",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "e4285dd4d7a8f98eec7b0719b6321795bf24f2bfceb58e9ab90d06c2e5411476",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D01.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D02",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the DP seed set [] is not the registered [101, 202, 303]; a one-seed result never becomes inferential [AUTH: 00 \u00a736.2]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "DP_SMOKE_ONLY",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "55390905c7c4ec5bb854b15f336cc4fe6b3899d81e1e009f77f65dfd02fcd699",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D02.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D03",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the DP seed set [] is not the registered [101, 202, 303]; a one-seed result never becomes inferential [AUTH: 00 \u00a736.2]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "DP_SMOKE_ONLY",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "21420410365b7838c7f036de50c9cbdf01910b164b9dc335d1c8ea325e8911ac",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D03.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D04",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the DP seed set [] is not the registered [101, 202, 303]; a one-seed result never becomes inferential [AUTH: 00 \u00a736.2]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "DP_SMOKE_ONLY",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "a043a6c0adc6b57b1e11c1b121237eade81f6c7a231920e0e39c2986ae2c5839",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D04.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D05",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the DP seed set [] is not the registered [101, 202, 303]; a one-seed result never becomes inferential [AUTH: 00 \u00a736.2]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "DP_SMOKE_ONLY",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "0d77b3c9a72299688001a3d18d1c16934307d33dea983d4616b77772d5360035",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D05.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D06",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "known-varying-alpha cells activate only after the fixed common-source baseline P0-C2 is reproduced under the frozen implementation [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "VARYING_ALPHA_AWAITS_P0_C2",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "a79f420d4ca850c0993cb60b561ec61bd7a1fa7de2fe38d87121e8f7f80454fe",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D06.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D07",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "known-varying-alpha cells activate only after the fixed common-source baseline P0-C2 is reproduced under the frozen implementation [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "VARYING_ALPHA_AWAITS_P0_C2",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "3056b8ece99fdc09748183e928f213ad0d9b90c8920d83498a535f4ff7d000d9",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D07.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D08",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "4254e4ccc804b4c7630308f1d6cf47b6e7e9f7b20ca7994098a95bc1691b9ecd",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D08.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D09",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "b8d2c5cd0be5f073f0b0ca3efd5c25b3158828c54f195fae69dd742ea874cbe5",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D09.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "SCORE_TABLE",
+      "cell_id": "D10",
+      "depends_on": [
+        "train.qwen3_5_4b_base.canary.101",
+        "stage.P0-C1"
+      ],
+      "detail": "the primary lossy operator is not yet selected; it is frozen before operator privacy outcomes are opened [AUTH: 00 \u00a736]",
+      "execution_binding": "src.scoring.engine:score_records",
+      "gate": "OPERATOR_UNRESOLVED",
+      "model_alias": "qwen3_5_4b_base",
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "835ed21d0c9f7228f361b31ee1e52af2856f5adf75fcecf6277766befbd13e9c",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "cell.D10.qwen3_5_4b_base"
+    },
+    {
+      "artifact_kind": "RESULT_TABLE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-F"
+      ],
+      "detail": "primary rank-matched ladder [AUTH: 00 \u00a728A]",
+      "execution_binding": "src.analysis.isotonic:fit_monotone_curve",
+      "gate": "P0-F",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "41ac54e90c85dcd1bb659877c0dab894a9479b6fcb08bfb837519a62464909bc",
+      "seed": null,
+      "stage": "P0-F",
+      "task_id": "analysis.rank_matched_ladder"
+    },
+    {
+      "artifact_kind": "RESULT_TABLE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-F"
+      ],
+      "detail": "secondary full-rank isotropic ladder [AUTH: 00 \u00a728A]",
+      "execution_binding": "src.analysis.isotonic:fit_monotone_curve",
+      "gate": "P0-F",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "6520e1a4af15fb98ebe3332206b84430c2dd5dc7e01df7ff464313ab76892d95",
+      "seed": null,
+      "stage": "P0-F",
+      "task_id": "analysis.isotropic_ladder"
+    },
+    {
+      "artifact_kind": "RESULT_TABLE",
+      "cell_id": null,
+      "depends_on": [
+        "stage.P0-A"
+      ],
+      "detail": "per-arm eligibility [AUTH: 00 \u00a718]",
+      "execution_binding": "src.analysis.endpoints:report_normalised_privacy",
+      "gate": "P0-A",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "35aff49e8cd838bfbc85c3f00840e16755b5948f6b6a8739fa01b0b10462801c",
+      "seed": null,
+      "stage": "P0-A",
+      "task_id": "analysis.privacy_eligibility"
+    },
+    {
+      "artifact_kind": "RESULT_TABLE",
+      "cell_id": null,
+      "depends_on": [
+        "analysis.privacy_eligibility"
+      ],
+      "detail": "cluster bootstrap over the registered cells",
+      "execution_binding": "src.analysis.resampling:bootstrap",
+      "gate": "P1",
+      "model_alias": null,
+      "readiness": "GATED_BY_RESULT",
+      "resolved_config_sha256": "7967184ddbde4356b53600ca5a3988592ff1cadb38df5e42f05157ecd7d8556f",
+      "seed": null,
+      "stage": "P1",
+      "task_id": "analysis.bootstrap_intervals"
+    }
+  ]
+}
