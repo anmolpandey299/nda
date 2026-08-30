@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final
 
 import numpy as np
@@ -843,17 +844,376 @@ def evaluate_dry_g(
 # Dry-run coverage status — machine readable, authority consistent
 # ----------------------------------------------------------------------------------------
 
+# ----------------------------------------------------------------------------------------
+# DRY-D — spectral-tail effect [AUTH: 00 §34B.1 DRY-D, §28B.4]
+# ----------------------------------------------------------------------------------------
+
 #: DRY-D plants truncation points below the rank-matched privacy curve and reads
 #: Delta_tail_priv for the reference and Min-K% scores [AUTH: 00 §34B.1 DRY-D, §28B]. Those
 #: quantities are defined over O3 SVD-truncation merges and their recoveries, which are S07
-#: and S08 objects. Block B is scoped to S03/S04 and is forbidden to build them, so DRY-D has
-#: an unmet dependency rather than a failing implementation.
-DRY_D_STATUS: Final = "NOT_RUN_DEPENDENCY(S07_S08)"
+#: and S08 objects. Block B could not build them, so DRY-D carried an unmet dependency.
+#:
+#: S07 (merge operators) and S08 (recovery) now exist, so the dependency checkpoint is
+#: satisfied and the already-frozen scenario is activated. Nothing about the statistic, the
+#: rank-matched curve semantics, the reference/Min-K interpretation or the thresholds changed.
+#:
+#: The wording is deliberately narrow. 00 §28B.4 defines
+#:
+#:     Delta_tail_priv(s) = R_priv^trunc(s) - f_priv^rank(e_floor(s))
+#:
+#: over the TRUNCATED O3 artifact's privacy response against the rank-matched calibration
+#: curve evaluated at e_floor(s). It does not consume a recovered A or a solver error. So S07
+#: supplies the truncation geometry the statistic is defined on, and S08 satisfies the planned
+#: recovery-stage dependency checkpoint and supplies the wider O3 diagnostic and recovery
+#: implementation the scenario sits inside — not the statistic's own inputs.
+DRY_D_STATUS: Final = "COVERED"
 DRY_D_REASON: Final = (
-    "DRY-D requires O3 SVD-truncation merge artifacts and their recoveries (S07 merge"
-    " operators, S08 recovery) to produce Delta_tail_priv; those objects do not exist yet"
-    " [AUTH: 00 §34B.1 DRY-D, §28B; 01 §39 S07, S08]"
+    "DRY-D is active: S07 O3 SVD-truncation merges supply the real truncation geometry"
+    " e_floor(s) that Delta_tail_priv is evaluated at, and S08 completes the planned"
+    " recovery-stage dependency checkpoint and the wider O3 diagnostic implementation. The"
+    " Delta_tail_priv statistic itself compares the truncated artifact's privacy response"
+    " against the rank-matched calibration curve; it does not consume a recovered A or a"
+    " solver error [AUTH: 00 §34B.1 DRY-D, §28B.4; 01 §39 S07, S08]"
 )
+
+#: The 00 §34B.1 DRY-D cutoffs now live in `configs/p0/dry_run.json`, because DRY-D1's pair
+#: is CALIBRATED — the 97.5th percentile of a 200-trial planted-effect bank — and 02 §C5 binds
+#: that bank to the implementation it was generated from. Keeping a calibrated number as a
+#: source literal is what let the 10-rank implementation's cutoffs survive the correction to
+#: the authoritative 12-rank schedule. DRY-D2's pair is a structural spec constant that 02 §C5
+#: does not cover; it is moved for consistency and its values are unchanged.
+#:
+#: The superseded pair is recorded here as history, never consumed:
+#:
+#:     DRY-D1 reference  -0.136213   SUPERSEDED_PRE_DATA_BY_02_C5_RECALIBRATION
+#:     DRY-D1 Min-K%     -0.135921   SUPERSEDED_PRE_DATA_BY_02_C5_RECALIBRATION
+#:
+#: 00 §34B.1A still states them; the implementation evidence records that binding clarification
+#: 02 §C5 superseded them pre-data, after the retained-rank schedule defect was measured.
+SUPERSEDED_DRY_D1_REFERENCE_MAX: Final = -0.136213
+SUPERSEDED_DRY_D1_MINK_MAX: Final = -0.135921
+SUPERSEDED_THRESHOLD_STATUS: Final = "SUPERSEDED_PRE_DATA_BY_02_C5_RECALIBRATION"
+
+
+@dataclass(frozen=True)
+class TailThresholds:
+    """The four resolved DRY-D cutoffs [AUTH: 00 §34B.1; 02 §C5]."""
+
+    d1_reference: float
+    d1_mink: float
+    d2_reference: float
+    d2_mink_abs: float
+
+
+def tail_thresholds(root: Path | None = None) -> TailThresholds:
+    """Resolve the frozen DRY-D cutoffs. One source of truth, version-controlled [01 §17]."""
+    from src.analysis.settings import dry_run_settings
+
+    settings = dry_run_settings(root or Path(__file__).resolve().parents[2])
+    return TailThresholds(
+        d1_reference=settings.number("dry_d1_reference_threshold"),
+        d1_mink=settings.number("dry_d1_mink_threshold"),
+        d2_reference=settings.number("dry_d2_reference_threshold"),
+        d2_mink_abs=settings.number("dry_d2_mink_abs_threshold"),
+    )
+
+
+DRY_D_PASS: Final = "TAIL_EFFECT_CORROBORATED"
+DRY_D_BASE_GEOMETRY: Final = "BASE_GEOMETRY_SENSITIVE"
+DRY_D_FAIL: Final = "TAIL_EFFECT_NOT_DETECTED"
+
+#: The complete 00 §28B.1 retained-rank ladder. s = 32 is the oracle anchor (T_32(A) = A for a
+#: rank-32 adapter) and s = 0 is the zero-delta base anchor; neither is a truncation point that
+#: needs new scoring artifacts, so DRY-D runs over the TWELVE interior ranks between them.
+DRY_D_ANCHOR_RANKS: Final[tuple[int, ...]] = (32, 0)
+DRY_D_INTERIOR_RANKS: Final[tuple[int, ...]] = (31, 28, 24, 20, 16, 12, 8, 6, 4, 3, 2, 1)
+DRY_D_RETAINED_RANKS: Final[tuple[int, ...]] = DRY_D_INTERIOR_RANKS
+
+#: IMPLEMENTATION_ADJUDICATION_PRE_DATA. 00 §28B.4 defines Delta_tail_priv(s) per retained
+#: rank; 00 §34B.1 states one scalar cutoff per score. The trial statistic is the mean over the
+#: schedule, matching the house convention DRY-B already uses ("mean planted operator
+#: residual"). The per-rank values are reported beside it and nothing is discarded.
+DRY_D_TRIAL_STATISTIC: Final = "MEAN_DELTA_TAIL_PRIV_OVER_RETAINED_RANK_SCHEDULE"
+
+#: Sweeps for the planted dry-run solve. Not a scientific value: it drives a fixture context.
+DRY_D_FIXTURE_ITERATIONS: Final = 60
+
+
+@dataclass(frozen=True)
+class TailTrial:
+    """One planted spectral-tail trial [AUTH: 00 §28B.4, §34B.1 DRY-D].
+
+    `e_floor` and `solver_error` come from real S07 truncations and real S08 recoveries. The
+    privacy responses are planted, exactly as DRY-A and DRY-B plant theirs: a dry run has no
+    model to score.
+    """
+
+    retained_ranks: tuple[int, ...]
+    e_floor: tuple[float, ...]
+    solver_error: tuple[float, ...]
+    reference_delta: tuple[float, ...]
+    mink_delta: tuple[float, ...]
+
+    @property
+    def mean_reference_delta(self) -> float:
+        return float(np.mean(self.reference_delta))
+
+    @property
+    def mean_mink_delta(self) -> float:
+        return float(np.mean(self.mink_delta))
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "statistic": DRY_D_TRIAL_STATISTIC,
+            "retained_ranks": list(self.retained_ranks),
+            "e_floor": list(self.e_floor),
+            "solver_error": list(self.solver_error),
+            "reference_delta_tail_priv": list(self.reference_delta),
+            "mink_delta_tail_priv": list(self.mink_delta),
+            "mean_reference_delta_tail_priv": self.mean_reference_delta,
+            "mean_mink_delta_tail_priv": self.mean_mink_delta,
+        }
+
+
+def _tail_geometry(
+    master_seed: int, retained_ranks: Sequence[int]
+) -> tuple[list[float], list[float]]:
+    """Real e_floor(s) and real S08 solver error per retained rank.
+
+    This is the S07/S08 dependency checkpoint DRY-D was waiting on: the O3 truncations
+    genuinely exist, so the spectral-tail axis the statistic is evaluated at is measured rather
+    than assumed. The solver error is reported alongside as a diagnostic; 00 §28B.4's
+    Delta_tail_priv does not consume it. Imported inside the function so Block B carries no
+    module-level dependency on later stages.
+
+    The surface is 40x36 with a rank-32 protected constituent, matching the 01 §8B LoRA rank
+    the 00 §28B.1 ladder is written for, so retaining 31 or 28 directions is a real truncation
+    rather than a no-op clamp against a smaller matrix dimension.
+    """
+    from pathlib import Path
+
+    from src.merge.context import resolve_merge_context
+    from src.merge.family import MergeSpec, build_release_family
+    from src.merge.updates import fixture_induced_update
+    from src.recovery.context import fixture_recovery_context
+    from src.recovery.evaluation import o3_error_report
+    from src.recovery.observations import observe_incomplete_fixed
+    from src.recovery.settings import recovery_settings
+    from src.recovery.solvers import recover_c2_fixed_alpha
+    from src.recovery.truth import bind_truth
+
+    root = Path(__file__).resolve().parents[2]
+    merge_context = resolve_merge_context(root)
+    # A dry run exercises the frozen algorithm on planted fixtures; the production sweep count
+    # is for real artifacts. The fixture context is labelled FIXTURE_ONLY_NOT_SCIENTIFIC, so
+    # nothing solved here can be read as the accepted scientific method [AUTH: 01 §17].
+    recovery_context = fixture_recovery_context(
+        recovery_settings(root).document, c2_n_iters=DRY_D_FIXTURE_ITERATIONS
+    )
+
+    rng = np.random.Generator(np.random.PCG64(master_seed))
+    names = ("w0", "w1")
+    rows, columns = 40, 36
+
+    def low_rank(rank: int) -> dict[str, FloatArray]:
+        """An exactly rank-`rank` induced update, as ΔW = BA is by construction."""
+        return {
+            name: rng.normal(size=(rows, rank)) @ rng.normal(size=(rank, columns)) for name in names
+        }
+
+    protected = fixture_induced_update(low_rank(32), context=merge_context, origin="A")
+    partners = {
+        f"B{index}": fixture_induced_update(low_rank(8), context=merge_context, origin=f"B{index}")
+        for index in range(4)
+    }
+
+    floors: list[float] = []
+    errors: list[float] = []
+    for retained in retained_ranks:
+        family = build_release_family(
+            protected=protected,
+            partners=partners,
+            specs=[
+                MergeSpec(
+                    descendant_id=f"D{index}",
+                    operator="O3_SVD_TRUNC_MERGE",
+                    alpha=0.5,
+                    partner_id=f"B{index}",
+                    retained_rank=retained,
+                )
+                for index in range(4)
+            ],
+            permitted_k=(4,),
+            context=merge_context,
+        )
+        observation = observe_incomplete_fixed(family=family, context=recovery_context)
+        recovered = recover_c2_fixed_alpha(observation)
+        binding = bind_truth(observation=observation, source=family, protected_truth=protected)
+        report = o3_error_report(recovered, binding, o3_source=family)
+        floors.append(float(str(report["e_floor"])))
+        errors.append(float(str(report["e_solver_retained"])))
+    return floors, errors
+
+
+def generate_tail_trial(
+    master_seed: int,
+    *,
+    reference_shift: float,
+    mink_shift: float,
+    retained_ranks: Sequence[int] = DRY_D_RETAINED_RANKS,
+) -> TailTrial:
+    """Plant truncation points below the rank-matched privacy curve [AUTH: 00 §34B.1 DRY-D].
+
+    Delta_tail_priv(s) = R_priv^trunc(s) - f_priv^rank(e_floor(s)) [AUTH: 00 §28B.4]. The
+    planted truncation response sits `shift` below the rank-matched curve evaluated at the real
+    e_floor(s), so the planted deviation IS the statistic — which is what "plant truncation
+    points below the rank-matched curve" means.
+
+    `mink_shift` is separate so the geometry-confounded scenario can move the reference score
+    while leaving the Min-K% score near zero [AUTH: 00 §28B.4 corroboration rule].
+    """
+    floors, errors = _tail_geometry(master_seed, retained_ranks)
+    rng = np.random.Generator(np.random.PCG64(master_seed + 1))
+
+    # The rank-matched additive ladder: a planted non-increasing recovery-against-error curve,
+    # fitted with the frozen S04 isotonic implementation.
+    ladder_error = np.linspace(0.0, 1.0, 24)
+    ladder_recovery = 1.0 - 0.8 * ladder_error
+    curve = fit_monotone_curve(ladder_error, ladder_recovery)
+
+    reference: list[float] = []
+    mink: list[float] = []
+    for index, floor in enumerate(floors):
+        matched = curve.predict(min(max(floor, 0.0), 1.0))
+        noise = float(normal(rng, 2)[0]) * 0.01
+        reference.append((matched + reference_shift + noise) - matched)
+        mink.append((matched + mink_shift + noise * 0.5) - matched)
+        del index
+    return TailTrial(
+        retained_ranks=tuple(retained_ranks),
+        e_floor=tuple(floors),
+        solver_error=tuple(errors),
+        reference_delta=tuple(reference),
+        mink_delta=tuple(mink),
+    )
+
+
+@dataclass(frozen=True)
+class TailVerdict:
+    """The frozen DRY-D1 / DRY-D2 decision [AUTH: 00 §34B.1]."""
+
+    scenario: str
+    status: str
+    trial: TailTrial
+
+    def as_dict(self) -> dict[str, object]:
+        return {"scenario": self.scenario, "status": self.status, **self.trial.as_dict()}
+
+
+def evaluate_dry_d1(trial: TailTrial, *, thresholds: TailThresholds | None = None) -> TailVerdict:
+    """Both directions must corroborate against the frozen cutoffs [AUTH: 00 §34B.1].
+
+    The cutoffs are resolved from config, not regenerated: calibration happens once, pre-data,
+    and validation consumes the frozen result [AUTH: 02 §C5].
+    """
+    limits = thresholds or tail_thresholds()
+    corroborated = (
+        trial.mean_reference_delta < limits.d1_reference and trial.mean_mink_delta < limits.d1_mink
+    )
+    return TailVerdict(
+        scenario="DRY-D1",
+        status=DRY_D_PASS if corroborated else DRY_D_FAIL,
+        trial=trial,
+    )
+
+
+def evaluate_dry_d2(trial: TailTrial, *, thresholds: TailThresholds | None = None) -> TailVerdict:
+    """Reference moves, Min-K% does not: BASE_GEOMETRY_SENSITIVE [AUTH: 00 §34B.1, §28B.4].
+
+    Not recalibrated: 02 §C5 covers positive-control power calibration, and this pair is a
+    structural spec constant rather than a percentile of a planted bank.
+    """
+    limits = thresholds or tail_thresholds()
+    confounded = (
+        trial.mean_reference_delta < limits.d2_reference
+        and abs(trial.mean_mink_delta) < limits.d2_mink_abs
+    )
+    return TailVerdict(
+        scenario="DRY-D2",
+        status=DRY_D_BASE_GEOMETRY if confounded else DRY_D_FAIL,
+        trial=trial,
+    )
+
+
+@dataclass(frozen=True)
+class TailPositiveControl:
+    """One arm of the DRY-D1 planted-effect bank and the cutoff frozen from it [02 §C5]."""
+
+    name: str
+    n_trials: int
+    quantile: float
+    threshold: float
+    values: tuple[float, ...]
+
+    @property
+    def empirical_power(self) -> float:
+        """Fraction of planted-effect trials that would be detected at this cutoff.
+
+        The planted DRY-D1 effect is NEGATIVE, so detection is `statistic < threshold`.
+        """
+        return float(np.mean(np.asarray(self.values) < self.threshold))
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "n_trials": self.n_trials,
+            "quantile": self.quantile,
+            "threshold": self.threshold,
+            "empirical_power": self.empirical_power,
+            "values": list(self.values),
+        }
+
+
+#: numpy's default. Recorded explicitly so the cutoff is reproducible from the bank alone.
+CALIBRATION_QUANTILE_METHOD: Final = "numpy.percentile(method='linear')"
+
+
+def calibrate_dry_d1_positive_control(
+    master_seeds: Sequence[int], *, planted_shift: float, quantile: float
+) -> dict[str, TailPositiveControl]:
+    """DRY-D1 power against the planted tail effect [AUTH: 02 §C5; 00 §34B.1A].
+
+    This calls `generate_tail_trial` — the SAME canonical statistic validation runs, over the
+    same twelve interior ranks and the same planted-effect model. Only the master seed differs,
+    so there is no separate, easier calibration statistic.
+
+    Both readouts are calibrated independently: the reference and Min-K% arms carry different
+    noise (the generator scales the Min-K perturbation by half), so forcing one cutoff on both
+    would mis-state the power of at least one of them.
+    """
+    reference: list[float] = []
+    mink: list[float] = []
+    for seed in master_seeds:
+        trial = generate_tail_trial(seed, reference_shift=planted_shift, mink_shift=planted_shift)
+        reference.append(trial.mean_reference_delta)
+        mink.append(trial.mean_mink_delta)
+    return {
+        "reference": TailPositiveControl(
+            name="dry_d1_reference_delta_tail_priv",
+            n_trials=len(reference),
+            quantile=quantile,
+            threshold=float(np.percentile(np.asarray(reference, dtype=np.float64), quantile)),
+            values=tuple(reference),
+        ),
+        "mink": TailPositiveControl(
+            name="dry_d1_mink_delta_tail_priv",
+            n_trials=len(mink),
+            quantile=quantile,
+            threshold=float(np.percentile(np.asarray(mink, dtype=np.float64), quantile)),
+            values=tuple(mink),
+        ),
+    }
+
 
 #: Every scenario 00 §34B.2 requires before the P0-PRE gate may be considered.
 REQUIRED_DRY_SCENARIOS: Final[tuple[str, ...]] = (
@@ -869,7 +1229,6 @@ REQUIRED_DRY_SCENARIOS: Final[tuple[str, ...]] = (
     "DRY-CACHE",
 )
 
-#: Scenarios Block B implements and runs.
-COVERED_DRY_SCENARIOS: Final[tuple[str, ...]] = tuple(
-    name for name in REQUIRED_DRY_SCENARIOS if name != "DRY-D"
-)
+#: Scenarios the synthetic lane implements and runs. DRY-D joined once S07 and S08 supplied
+#: the O3 truncations and recoveries it is defined over [AUTH: 00 §34B.1 DRY-D; 01 §39].
+COVERED_DRY_SCENARIOS: Final[tuple[str, ...]] = REQUIRED_DRY_SCENARIOS

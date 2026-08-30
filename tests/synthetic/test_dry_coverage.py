@@ -1,8 +1,10 @@
-"""Dry-run coverage status: what Block B ran, and what is dependency-deferred.
+"""Dry-run coverage status: every required scenario is now run, none is dependency-deferred.
 
-This test passes; it records a dependency rather than hiding a failure. DRY-D is not skipped
-or xfailed — it is not implementable in this block, and the reason is asserted against the
-absence of the objects it needs [AUTH: 00 §34B.1 DRY-D, §28B; 01 §39 S07, S08].
+This module used to record DRY-D as `NOT_RUN_DEPENDENCY(S07_S08)` and verified the deferral
+against the *absence* of the objects DRY-D needs. S07 (merge operators) and S08 (recovery)
+supplied them, so the same tests are inverted: the dependency is verified to *exist*, and the
+carve-out that let DRY-D sit outside the covered set is gone. Returning DRY-D to permanent
+deferral now fails here rather than passing quietly [AUTH: 00 §34B.1 DRY-D, §28B; 01 §39].
 """
 
 from __future__ import annotations
@@ -18,40 +20,68 @@ from src.analysis.dryrun import (
     REQUIRED_DRY_SCENARIOS,
 )
 
+#: The vocabulary a deferral would have to use. Any of these reappearing on DRY-D means the
+#: scenario has been switched back off [AUTH: 00 §34B.2].
+DEFERRAL_MARKERS = ("NOT_RUN", "DEFERRED", "PENDING", "BLOCKED", "SKIP")
 
-def test_dry_d_status_is_a_recorded_dependency() -> None:
-    assert DRY_D_STATUS == "NOT_RUN_DEPENDENCY(S07_S08)"
+
+def test_dry_d_is_covered_and_carries_no_deferral_status() -> None:
+    assert DRY_D_STATUS == "COVERED"
+    for marker in DEFERRAL_MARKERS:
+        assert marker not in DRY_D_STATUS.upper(), f"DRY-D status re-deferred via {marker!r}"
+    assert "DRY-D" in COVERED_DRY_SCENARIOS
     assert "S07" in DRY_D_REASON and "S08" in DRY_D_REASON
-    assert "DRY-D" not in COVERED_DRY_SCENARIOS
 
 
-def test_the_dry_d_dependency_genuinely_does_not_exist(repo_root: Path) -> None:
-    """The deferral is verified, not asserted.
+def test_the_dry_d_reason_does_not_overstate_what_the_statistic_consumes() -> None:
+    """R11: 00 §28B.4 defines Delta_tail over truncation-vs-calibration, not over recovered A.
+
+    S07 supplies the truncation geometry the statistic is evaluated at, and S08 satisfies the
+    planned recovery-stage dependency checkpoint. Saying the statistic is *defined over* the
+    recovered artifacts would be a stronger claim than the spec makes.
+    """
+    lowered = DRY_D_REASON.lower()
+    assert "does not consume a recovered a" in lowered
+    assert "defined over" not in lowered
+    assert "truncation geometry" in lowered and "calibration curve" in lowered
+
+
+def test_no_required_scenario_is_uncovered() -> None:
+    """The DRY-D carve-out is deleted, not widened.
+
+    While DRY-D was deferred this comparison subtracted `{"DRY-D"}`. It no longer does, so any
+    scenario dropping out of the covered set — DRY-D included — fails here.
+    """
+    missing = set(REQUIRED_DRY_SCENARIOS) - set(COVERED_DRY_SCENARIOS)
+    assert missing == set(), f"unrun scenario(s) with no coverage: {sorted(missing)}"
+    assert set(COVERED_DRY_SCENARIOS) == set(REQUIRED_DRY_SCENARIOS)
+
+
+def test_the_dry_d_dependency_now_genuinely_exists(repo_root: Path) -> None:
+    """The activation is verified the same three ways the deferral was.
 
     Delta_tail_priv(s) = R_priv^trunc(s) - f_priv^rank(e_floor(s)) [AUTH: 00 §28B.4], so it
-    needs BOTH an O3 truncation artifact and a recovery R_priv on it. S07 supplied the first
-    half; the second does not exist, so the scenario is still unrunnable.
-
-    Checked three ways, all of which re-fire the moment S08 lands:
-
-    1. the recovery package carries no implementation;
-    2. no merge module produces a recovery or privacy quantity, so S07 cannot smuggle one in;
-    3. 00 §28B runs only under P1_PRIMARY_LOSSY_OPERATOR, which is REQUIRED_NOT_CALIBRATED
-       and therefore fails closed.
+    needs BOTH an O3 truncation artifact and a recovery on it. Each of the three checks that
+    previously proved absence now proves presence, so an S08 rollback re-fires all three.
     """
     recovery = sorted(
         path.name
         for path in (repo_root / "src" / "recovery").glob("*.py")
         if path.name != "__init__.py"
     )
-    assert recovery == [], f"src/recovery now has {recovery}; DRY-D may be implementable"
+    assert "solvers.py" in recovery, f"src/recovery lost its solver; DRY-D input gone: {recovery}"
+    assert "evaluation.py" in recovery, "src/recovery lost its e_floor evaluator"
 
-    banned = ("r_priv", "delta_tail", "recover", "reconstruct")
-    for path in sorted((repo_root / "src" / "merge").glob("*.py")):
-        source = path.read_text(encoding="utf-8").lower()
-        for name in banned:
-            assert f"def {name}" not in source, f"{path.name} defines {name}; DRY-D input?"
+    from src.merge.family import build_o3_descendant
+    from src.recovery.evaluation import o3_error_report
+    from src.recovery.solvers import recover_c2_fixed_alpha
+    from src.recovery.truth import bind_truth
 
+    for produced in (build_o3_descendant, recover_c2_fixed_alpha, o3_error_report, bind_truth):
+        assert callable(produced)
+
+    #: 00 §28B still runs only under P1_PRIMARY_LOSSY_OPERATOR, which stays uncalibrated. The
+    #: dry run exercises the frozen mechanism; it does not license the real §28B experiment.
     from src.materials import UncalibratedConstantError, material
     from src.merge.settings import merge_settings
 
@@ -59,14 +89,13 @@ def test_the_dry_d_dependency_genuinely_does_not_exist(repo_root: Path) -> None:
         material(merge_settings(repo_root), "primary_lossy_operator")
 
 
-def test_every_other_required_scenario_is_covered() -> None:
-    missing = set(REQUIRED_DRY_SCENARIOS) - set(COVERED_DRY_SCENARIOS) - {"DRY-D"}
-    assert missing == set(), f"unrun scenarios without a recorded dependency: {sorted(missing)}"
-
-
 def test_the_covered_scenarios_have_test_modules(repo_root: Path) -> None:
     """Each covered scenario is exercised by a module in this lane."""
     lane = repo_root / "tests" / "synthetic"
-    text = "\n".join(path.read_text(encoding="utf-8") for path in lane.glob("test_*.py"))
+    text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in lane.glob("test_*.py")
+        if path.name != Path(__file__).name
+    )
     for scenario in COVERED_DRY_SCENARIOS:
         assert scenario in text, f"{scenario} has no test in the synthetic lane"

@@ -1,9 +1,9 @@
 """DRY-A/B/C/E/F and the positive-control calibration [AUTH: 00 §34B.1, §34B.1A; 02 §C5].
 
-DRY-D (spectral-tail) is not implementable in Block B: it needs O3 truncation ladders, i.e.
-merge and recovery objects this block is forbidden to build. It belongs to the block that
-owns those operators; the machinery it would use — residuals, Min-K parallel readout and the
-crossing states — is exercised here.
+DRY-D (spectral-tail) is not in this module: it needs O3 truncation ladders, i.e. merge and
+recovery objects Block B does not own. S07 and S08 have since supplied them, so DRY-D is
+implemented and COVERED in `test_dry_d_tail.py`. The machinery the two scenarios share —
+residuals, Min-K parallel readout and the crossing states — is exercised here.
 """
 
 from __future__ import annotations

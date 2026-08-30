@@ -74,8 +74,43 @@ def test_no_merge_module_reaches_the_scoring_or_recovery_stages(path: Path) -> N
     assert not {m for m in reached if m.startswith(("src.scoring", "src.recovery", "src.attacks"))}
 
 
-def test_no_recovery_solver_was_implemented() -> None:
-    """B18: S08 owns C1 inversion, spectral de-tuning, conditioning and reconstructed A-hat."""
+def public_functions(package: Path) -> set[str]:
+    """Every module-level public function a package defines."""
+    found: set[str] = set()
+    for path in sorted(package.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+        found.update(
+            node.name
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and not node.name.startswith("_")
+        )
+    return found
+
+
+def called_names(path: Path) -> set[str]:
+    """Every name this module calls, whether bare or through an attribute."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        target = node.func
+        if isinstance(target, ast.Name):
+            found.add(target.id)
+        elif isinstance(target, ast.Attribute):
+            found.add(target.attr)
+    return found
+
+
+def test_s07_merge_layer_remains_recovery_free() -> None:
+    """B18: S08 owns C1 inversion, spectral de-tuning, conditioning and reconstructed A-hat.
+
+    S08 now exists, so the enduring boundary is architectural rather than temporal: the merge
+    layer must not implement recovery, import `src.recovery`, or call into it. Asserting that
+    `src/recovery/solvers.py` is absent was only ever a proxy for this, and it stopped being
+    true the moment S08 landed — the boundary it stood for did not [AUTH: 01 §39 S07, S08].
+    """
     banned = (
         "oracle_invert",
         "spectral_detuning",
@@ -88,7 +123,23 @@ def test_no_recovery_solver_was_implemented() -> None:
         source = path.read_text(encoding="utf-8").lower()
         for name in banned:
             assert f"def {name}" not in source, (path.name, name)
-    assert not (REPO_ROOT / "src" / "recovery" / "solvers.py").exists()
+
+    #: Names S08 owns that S07 does not also legitimately define for itself.
+    recovery_only = public_functions(REPO_ROOT / "src" / "recovery") - public_functions(
+        REPO_ROOT / "src" / "merge"
+    )
+    #: Sentinel: the set is non-vacuous. The C2 numerical core is module-private in S08, so
+    #: the public names are the recovery entry points themselves.
+    assert {"recover_c1", "recover_c2_fixed_alpha", "bind_truth"} <= recovery_only
+
+    for path in MERGE_SOURCES:
+        reached = imports(path)
+        assert not {m for m in reached if m == "src.recovery" or m.startswith("src.recovery.")}, (
+            path.name,
+            sorted(reached),
+        )
+        invoked = called_names(path) & recovery_only
+        assert not invoked, (path.name, sorted(invoked))
 
 
 # ------------------------------------------------------------------ operator vocabulary

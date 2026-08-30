@@ -1,0 +1,139 @@
+{
+  "authority": "00 \u00a722, \u00a724A, \u00a725, \u00a726, \u00a734B; 01 \u00a710, \u00a717, \u00a739 S08",
+  "description": "S08 recovery constants. Method definitions only \u2014 the P0/P1 experiment-cell registry is S09's.",
+  "recovery_version": {
+    "status": "FROZEN",
+    "value": "s08.recovery.v1",
+    "note": "Bumped whenever executable recovery semantics change; it enters every recovery artifact identity."
+  },
+  "arithmetic_dtype": {
+    "status": "FROZEN",
+    "value": "float32",
+    "note": "01 \u00a710 merge/recovery arithmetic and 00 \u00a725 P0-C1 ('compute in float32'). Every scientific recovered artifact is float32."
+  },
+  "diagnostic_dtype": {
+    "status": "FROZEN",
+    "value": "float64",
+    "note": "01 \u00a710 metrics/statistics: derived scalar quantities are stored in float64. Evaluation accumulates in float64 because it does not define artifact bytes."
+  },
+  "svd_workspace_dtype": {
+    "status": "FROZEN",
+    "value": "float64",
+    "note": "01 \u00a710. The truncated-SVD workspace runs in float64 for stability; every reconstruction is deterministically cast to the arithmetic dtype before it re-enters the iteration or is hashed."
+  },
+  "svd_backend": {
+    "status": "FROZEN",
+    "value": "numpy.linalg.svd(full_matrices=False, dtype=float64) -> scipy.linalg.svd(lapack_driver='gesvd') on non-convergence",
+    "note": "01 \u00a712. Pinned so the C2 iteration is reproducible. LAPACK's divide-and-conquer driver (gesdd, what numpy calls) fails to converge on some ill-conditioned residual iterates the C2 core reaches; the QR-iteration driver (gesvd) succeeds on the same matrix. The escalation is deterministic and mathematically equivalent - it computes the SVD of the same matrix - and it never runs unless the primary raises, so every path that already converges keeps its exact bytes. Rank and truncation semantics are unchanged."
+  },
+  "c2_method": {
+    "status": "FROZEN",
+    "value": "SPECTRAL_DETUNING_CORE_FIXED_RANK_REPRODUCTION",
+    "note": "00 \u00a725 P0-C2 'Spectral-DeTuning-style shared-source / low-rank-residual baseline'. Alternating common-source / truncated-SVD residual core, implemented independently from the mathematical description. Reproduction baseline, not a novelty contribution."
+  },
+  "c2_method_version": {
+    "status": "FROZEN",
+    "value": "s08.c2-core.v1",
+    "note": "C2B and O3 recovery bind this exact solver version; they introduce no second optimizer."
+  },
+  "c2_n_iters": {
+    "status": "FROZEN",
+    "value": 1000,
+    "note": "IMPLEMENTATION_ADJUDICATION_PRE_DATA. 00 \u00a725 does not freeze convergence internals; the reference implementation's SFT/DPO examples use n_iters=1000. A fixed count avoids a result-dependent stopping rule [AUTH: 00 \u00a734B.1A; 01 \u00a729]."
+  },
+  "c2_rank_scheduler": {
+    "status": "FROZEN",
+    "value": "DISABLED_FIXED_STRUCTURAL_RANK",
+    "note": "IMPLEMENTATION_ADJUDICATION_PRE_DATA. The residual rank is known from the controlled LoRA/O3 construction, and no scheduler policy was frozen in the measurement spec, so the published adaptive scheduler is not part of the primary S08 path."
+  },
+  "linear_residual_rank": {
+    "status": "FROZEN",
+    "value": 32,
+    "note": "00 \u00a78.3 / 01 \u00a78B primary LoRA rank r = 32. The C2 residual rank for standard linear descendants. For O3 the residual rank is the retained rank s carried by the observation, never a caller choice."
+  },
+  "conditioning_numerical_rank_tolerance": {
+    "status": "FROZEN",
+    "value": 1e-06,
+    "note": "IMPLEMENTATION_ADJUDICATION_PRE_DATA. 00 \u00a726 requires a fixed numerical-rank tolerance without repeating its value; this reuses the already-frozen 00 \u00a724A.6 criterion sigma_j / sigma_1 >= 1e-6 rather than inventing a second tolerance."
+  },
+  "c1_pass_criterion_ef": {
+    "status": "FROZEN",
+    "value": 1e-05,
+    "note": "00 \u00a725 P0-C1 pass criterion e_F <= 1e-5, evaluated in float32. Owned by the evaluator; the solver never sees it."
+  },
+  "partner_norm_match_limit": {
+    "status": "FROZEN",
+    "value": 1.25,
+    "note": "00 \u00a725 P0-C2B.2 partner-norm matching guard. Experiment-construction and evaluation only; a recovery method may never use it to search or select partners."
+  },
+  "c2b_k2_reference_schedule": {
+    "status": "FROZEN",
+    "value": [
+      0.35,
+      0.65
+    ],
+    "note": "00 \u00a725 P0-C2B.1 k = 2 reference schedule; beta spread ~3.45, a_alpha ~2.86."
+  },
+  "c2b_k4_spread_matched_schedule": {
+    "status": "FROZEN",
+    "value": [
+      0.35,
+      0.45,
+      0.55,
+      0.65
+    ],
+    "note": "00 \u00a725 P0-C2B.1 k = 4 spread-matched schedule; beta spread matched to k = 2."
+  },
+  "c2b_k4_wide_schedule": {
+    "status": "FROZEN",
+    "value": [
+      0.25,
+      0.4,
+      0.6,
+      0.75
+    ],
+    "note": "00 \u00a725 P0-C2B.1 k = 4 wide-spread schedule; beta spread 9.0, a_alpha 4.0. The explicit heteroscedastic stress condition."
+  },
+  "descendant_counts": {
+    "status": "FROZEN",
+    "value": [
+      2,
+      4
+    ],
+    "note": "00 \u00a711 k values an unknown-partner shared-source recovery can use. k = 1 is STRUCTURAL_NA: one observation cannot separate a common source from its residual."
+  },
+  "reference_method": {
+    "status": "FROZEN",
+    "value": "Spectral DeTuning \u2014 Recovering the Pre-Fine-Tuning Weights of Generative Models, ICML 2024, Algorithm 1 style",
+    "note": "Traceability only. The mathematics is implemented independently; no external source code was copied, and the study uses it as an occupied/reproduction baseline rather than a novel algorithm."
+  },
+  "o3_recovery_authorization": {
+    "status": "FROZEN",
+    "value": "CONDITIONAL_NOT_RUN",
+    "note": "00 \u00a724A.7. O3 recovery is implemented because it is pre-registered; implementation existence is not experiment authorization, and no O3 gate has been evaluated."
+  },
+  "dare_incomplete_recovery_status": {
+    "status": "FROZEN",
+    "value": "METHOD_GATED",
+    "note": "No incomplete-lineage DARE recovery method is implemented at S08."
+  },
+  "hidden_alpha_recovery_status": {
+    "status": "FROZEN",
+    "value": "STRUCTURAL_NOT_AUTHORIZED",
+    "note": "00 \u00a725 authorises known-coefficient regimes only. Unknown partner plus unknown coefficient is refused rather than approximated."
+  },
+  "naive_unrescaled_assumed_alpha": {
+    "status": "REQUIRED_NOT_CALIBRATED",
+    "note": "00 \u00a725 names the NAIVE_UNRESCALED_FIXED_ALPHA comparator but freezes no coefficient-estimation rule. The comparator therefore requires a predeclared assumed alpha supplied per cell by S09; reading a default here fails closed, so no coefficient inference can be invented."
+  },
+  "fixture_residual_rank": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 3,
+    "note": "Deterministic S08 fixture solves only. Not a research rank."
+  },
+  "fixture_n_iters": {
+    "status": "PROVISIONAL_FIXTURE_ONLY",
+    "value": 200,
+    "note": "Deterministic S08 fixture solves only, so parametrised tests stay fast. The production count is c2_n_iters."
+  }
+}

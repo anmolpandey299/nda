@@ -361,6 +361,56 @@ def _obs_legacy(root: Path) -> Any:
     return tuple(sorted((k, round(v, 12)) for k, v in values.items()))
 
 
+def _obs_dry_d_thresholds(root: Path) -> Any:
+    """The four DRY-D cutoffs, as `evaluate_dry_d1` / `evaluate_dry_d2` actually read them."""
+    from src.analysis.dryrun import TailTrial, evaluate_dry_d1, evaluate_dry_d2, tail_thresholds
+
+    limits = tail_thresholds(root)
+    #: a hand-built trial, so the verdicts move with the cutoffs and nothing else
+    trial = TailTrial(
+        retained_ranks=(31, 1),
+        e_floor=(0.01, 0.9),
+        solver_error=(0.2, 0.0),
+        reference_delta=(-0.20, -0.20),
+        mink_delta=(-0.20, -0.20),
+    )
+    return (
+        round(limits.d1_reference, 12),
+        round(limits.d1_mink, 12),
+        round(limits.d2_reference, 12),
+        round(limits.d2_mink_abs, 12),
+        evaluate_dry_d1(trial, thresholds=limits).status,
+        evaluate_dry_d2(trial, thresholds=limits).status,
+    )
+
+
+def _obs_dry_d1_calibration(root: Path) -> Any:
+    """The DRY-D1 positive-control bank, over a short window of the frozen seed family.
+
+    The full 200-trial bank is generated once, pre-data, by
+    `scripts/calibrate_dryrun_tolerances.py`. A consumption probe only has to prove the
+    parameters reach the generator, so it runs the same canonical statistic over two seeds.
+    """
+    from src.analysis.dryrun import calibrate_dry_d1_positive_control
+
+    settings = dry_run_settings(root)
+    start = settings.integer("dry_d1_calibration_seed_start")
+    count = settings.integer("dry_d1_calibration_trials")
+    seeds = list(range(start, start + min(count, 2)))
+    bank = calibrate_dry_d1_positive_control(
+        seeds,
+        planted_shift=settings.number("dry_d1_planted_shift"),
+        quantile=settings.number("dry_d1_quantile"),
+    )
+    return (
+        count,
+        seeds[0],
+        seeds[-1],
+        round(bank["reference"].threshold, 12),
+        round(bank["mink"].threshold, 12),
+    )
+
+
 def _obs_slope(root: Path) -> Any:
     settings = dry_run_settings(root)
     design = trial_design(root)
@@ -652,6 +702,62 @@ FIELDS: tuple[Field, ...] = (
         "marginal_diagnostic_tolerances",
         lambda v: 0.83,
         _obs_legacy,
+    ),
+    Field(
+        "dry_d1_reference_threshold",
+        DRY_RUN_CONFIG,
+        "evaluate_dry_d1 via tail_thresholds",
+        lambda v: -0.9,
+        _obs_dry_d_thresholds,
+    ),
+    Field(
+        "dry_d1_mink_threshold",
+        DRY_RUN_CONFIG,
+        "evaluate_dry_d1 via tail_thresholds",
+        lambda v: -0.9,
+        _obs_dry_d_thresholds,
+    ),
+    Field(
+        "dry_d2_reference_threshold",
+        DRY_RUN_CONFIG,
+        "evaluate_dry_d2 via tail_thresholds",
+        lambda v: -0.5,
+        _obs_dry_d_thresholds,
+    ),
+    Field(
+        "dry_d2_mink_abs_threshold",
+        DRY_RUN_CONFIG,
+        "evaluate_dry_d2 via tail_thresholds",
+        lambda v: 0.001,
+        _obs_dry_d_thresholds,
+    ),
+    Field(
+        "dry_d1_planted_shift",
+        DRY_RUN_CONFIG,
+        "calibrate_dry_d1_positive_control -> generate_tail_trial",
+        lambda v: -0.55,
+        _obs_dry_d1_calibration,
+    ),
+    Field(
+        "dry_d1_calibration_seed_start",
+        DRY_RUN_CONFIG,
+        "calibrate_dry_d1_positive_control seed family",
+        _offset(31),
+        _obs_dry_d1_calibration,
+    ),
+    Field(
+        "dry_d1_calibration_trials",
+        DRY_RUN_CONFIG,
+        "calibrate_dry_d1_positive_control loop",
+        lambda v: 1,
+        _obs_dry_d1_calibration,
+    ),
+    Field(
+        "dry_d1_quantile",
+        DRY_RUN_CONFIG,
+        "calibrate_dry_d1_positive_control percentile",
+        lambda v: 12.5,
+        _obs_dry_d1_calibration,
     ),
     Field(
         "dry_a_slope",
