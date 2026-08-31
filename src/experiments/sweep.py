@@ -43,7 +43,20 @@ SWEEP_SCHEMA: Final = "s10.full-sweep-plan.v1"
 READY: Final = "READY"
 GATED_BY_RESULT: Final = "GATED_BY_RESULT"
 MISSING_EXECUTION_BINDING: Final = "MISSING_EXECUTION_BINDING"
-READINESS_CLASSES: Final[tuple[str, ...]] = (READY, GATED_BY_RESULT, MISSING_EXECUTION_BINDING)
+
+#: The execution code exists and is bound, but a material constant it consumes is still
+#: `REQUIRED_NOT_CALIBRATED` in `configs/training/**`. This is a *scientific* gap, not a code
+#: gap, and it is kept distinct from both of the others so neither can absorb it: calling it
+#: MISSING_EXECUTION_BINDING would send someone to write code that already exists, and calling
+#: it GATED_BY_RESULT would imply an experiment decides it [AUTH: 01 §17; 00 §8.3].
+BLOCKED_BY_UNCALIBRATED_CONSTANT: Final = "BLOCKED_BY_UNCALIBRATED_CONSTANT"
+
+READINESS_CLASSES: Final[tuple[str, ...]] = (
+    READY,
+    GATED_BY_RESULT,
+    MISSING_EXECUTION_BINDING,
+    BLOCKED_BY_UNCALIBRATED_CONSTANT,
+)
 
 #: What a task produces. Not a filename: the run lifecycle owns paths.
 ARTIFACT_KINDS: Final[tuple[str, ...]] = (
@@ -56,11 +69,10 @@ ARTIFACT_KINDS: Final[tuple[str, ...]] = (
     "BENCHMARK",
 )
 
-#: The production LoRA training loop. S06 shipped a reference trainer over numeric fixtures and
-#: recorded `NOT_RUN_DEPENDENCY(TORCH_PEFT_BACKEND)`; the PRE-S09 backend added adapter
-#: persistence, induced-update extraction and the scoring forward path, but no optimizer step.
-#: Every downstream artifact depends on it, so it is named here rather than assumed.
-TRAINING_BINDING: Final = "src.training.trainer:train_production_lora"
+#: The production LoRA training loop. S06 froze the training contract and shipped a reference
+#: trainer over numeric fixtures; this is the executor that runs it against real HF/PEFT
+#: models under the accepted adapter-persistence and run-lifecycle paths.
+TRAINING_BINDING: Final = "src.training.production:train_production_lora"
 
 
 class SweepError(ValueError):
@@ -111,6 +123,7 @@ class SweepPlan:
     tasks: tuple[SweepTask, ...]
     registry_sha256: str
     selected_operator: str
+    uncalibrated: tuple[str, ...] = ()
 
     def by_readiness(self, readiness: str) -> tuple[SweepTask, ...]:
         return tuple(task for task in self.tasks if task.readiness == readiness)
@@ -124,9 +137,23 @@ class SweepPlan:
         )
 
     @property
+    def blocked_constants(self) -> tuple[str, ...]:
+        """Material constants that exist in config but are not yet frozen."""
+        return self.uncalibrated
+
+    @property
     def ready(self) -> bool:
-        """The sweep is code-ready exactly when nothing is missing an execution binding."""
+        """Code-ready: every task names an execution binding that exists.
+
+        This is deliberately *not* "the sweep can run": a frozen-constant gap leaves the code
+        complete and the study still unable to start. `executable` is the stronger property.
+        """
         return not self.missing_bindings
+
+    @property
+    def executable(self) -> bool:
+        """Runnable now: code-ready AND no material constant is still uncalibrated."""
+        return self.ready and not self.uncalibrated
 
     def as_dict(self) -> dict[str, JSONValue]:
         counts: dict[str, JSONValue] = {
@@ -139,7 +166,9 @@ class SweepPlan:
             "n_tasks": len(self.tasks),
             "readiness_counts": counts,
             "full_sweep_code_ready": self.ready,
+            "full_sweep_executable": self.executable,
             "missing_execution_bindings": list(self.missing_bindings),
+            "uncalibrated_constants": list(self.uncalibrated),
             "tasks": [task.as_dict() for task in self.tasks],
         }
 
@@ -147,14 +176,43 @@ class SweepPlan:
         return sha256_canonical(self.as_dict())
 
 
+def uncalibrated_training_constants(root: Path) -> tuple[str, ...]:
+    """Which material training constants are still `REQUIRED_NOT_CALIBRATED`.
+
+    Read from the config documents themselves, so this cannot drift from what the trainer
+    will actually refuse at run time [AUTH: 01 §17].
+    """
+    from src.materials import uncalibrated_keys
+    from src.training.settings import dp_settings, lora_settings
+
+    found = [f"lora.{key}" for key in uncalibrated_keys(lora_settings(root))]
+    found += [f"dp.{key}" for key in uncalibrated_keys(dp_settings(root))]
+    return tuple(sorted(found))
+
+
+def _training_readiness(blocked: Sequence[str]) -> tuple[str, str]:
+    """A training task's class, and the detail that explains it."""
+    if blocked:
+        return (
+            BLOCKED_BY_UNCALIBRATED_CONSTANT,
+            f"the execution binding exists; {len(blocked)} material constant(s) are still"
+            f" REQUIRED_NOT_CALIBRATED, first {blocked[0]} [AUTH: 01 §17; 00 §8.3]",
+        )
+    return READY, "the trainer and every material constant it consumes are resolved"
+
+
 def _training_tasks(
-    models: Sequence[str], seeds: Sequence[int], dp_seeds: Sequence[int]
+    models: Sequence[str],
+    seeds: Sequence[int],
+    dp_seeds: Sequence[int],
+    blocked: Sequence[str],
 ) -> list[SweepTask]:
     """Training jobs: the canary arm, its matched no-canary control, and the DP arm.
 
     00 §7.5 pairs every canary-containing calibration seed with a matched no-canary control, so
     both are enumerated per seed rather than the control being assumed.
     """
+    readiness, why = _training_readiness(blocked)
     tasks: list[SweepTask] = []
     for alias in models:
         for seed in seeds:
@@ -168,12 +226,12 @@ def _training_tasks(
                         stage="S06-TRAIN",
                         kind="ADAPTER",
                         execution_binding=TRAINING_BINDING,
-                        readiness=MISSING_EXECUTION_BINDING,
+                        readiness=readiness,
                         depends_on=("stage.P0-PRE", "stage.P0-0"),
                         gate="P0-PRE",
                         model_alias=alias,
                         seed=seed,
-                        detail=note,
+                        detail=f"{note}; {why}",
                         resolved_config={"alias": alias, "arm": arm, "seed": seed},
                     )
                 )
@@ -184,12 +242,14 @@ def _training_tasks(
                     stage="S06-TRAIN-DP",
                     kind="ADAPTER",
                     execution_binding=TRAINING_BINDING,
-                    readiness=MISSING_EXECUTION_BINDING,
+                    readiness=readiness,
                     depends_on=("stage.P0-PRE",),
                     gate="P0-PRE",
                     model_alias=alias,
                     seed=seed,
-                    detail="representative DP arm; the accountant is src.dp.mechanism.account",
+                    detail=(
+                        f"representative DP arm; the accountant is src.dp.mechanism.account; {why}"
+                    ),
                     resolved_config={"alias": alias, "arm": "dp", "seed": seed},
                 )
             )
@@ -338,7 +398,8 @@ def build_sweep_plan(
     stages = load_stage_registry(root)
     tasks: list[SweepTask] = []
     tasks += _stage_tasks(stages, state)
-    tasks += _training_tasks(models, CALIBRATION_SEEDS, sorted(DP_INFERENTIAL_SEEDS))
+    blocked = uncalibrated_training_constants(root)
+    tasks += _training_tasks(models, CALIBRATION_SEEDS, sorted(DP_INFERENTIAL_SEEDS), blocked)
     tasks += _cell_tasks(root, registry, state, models)
     tasks += _analysis_tasks()
 
@@ -351,6 +412,7 @@ def build_sweep_plan(
         tasks=tuple(tasks),
         registry_sha256=registry_sha256(root),
         selected_operator=resolve_primary_lossy_operator(state),
+        uncalibrated=blocked,
     )
 
 
@@ -359,9 +421,14 @@ def readiness_audit(plan: SweepPlan) -> dict[str, JSONValue]:
     return {
         "schema": SWEEP_SCHEMA,
         "full_sweep_code_ready": plan.ready,
+        "full_sweep_executable": plan.executable,
         "missing_execution_bindings": list(plan.missing_bindings),
+        "uncalibrated_constants": list(plan.uncalibrated),
         "counts": {readiness: len(plan.by_readiness(readiness)) for readiness in READINESS_CLASSES},
         "missing_tasks": [task.task_id for task in plan.by_readiness(MISSING_EXECUTION_BINDING)][
             :20
         ],
+        "blocked_tasks": [
+            task.task_id for task in plan.by_readiness(BLOCKED_BY_UNCALIBRATED_CONSTANT)
+        ][:20],
     }

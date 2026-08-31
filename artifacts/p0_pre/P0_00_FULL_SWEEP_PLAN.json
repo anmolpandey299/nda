@@ -1,13 +1,13 @@
 {
-  "full_sweep_code_ready": false,
-  "missing_execution_bindings": [
-    "src.training.trainer:train_production_lora"
-  ],
+  "full_sweep_code_ready": true,
+  "full_sweep_executable": false,
+  "missing_execution_bindings": [],
   "n_tasks": 55,
-  "plan_sha256": "e448ea6b9e96bafe6c75fa5f0d866d1a06059b648dcf075a1da9ad4ad75fa867",
+  "plan_sha256": "8d35b56f1c073eeb65d3eb77834f3246481b058a9be9e8c2793eead80516061d",
   "readiness_counts": {
+    "BLOCKED_BY_UNCALIBRATED_CONSTANT": 9,
     "GATED_BY_RESULT": 40,
-    "MISSING_EXECUTION_BINDING": 9,
+    "MISSING_EXECUTION_BINDING": 0,
     "READY": 6
   },
   "registry_sha256": "e8dde926a63ec0d32c59fcf9bd8412b51038a8974b5cd9d561f3442827f7a89d",
@@ -227,11 +227,11 @@
         "stage.P0-PRE",
         "stage.P0-0"
       ],
-      "detail": "canary-containing calibration seed [AUTH: 00 \u00a77.5]",
-      "execution_binding": "src.training.trainer:train_production_lora",
+      "detail": "canary-containing calibration seed [AUTH: 00 \u00a77.5]; the execution binding exists; 11 material constant(s) are still REQUIRED_NOT_CALIBRATED, first dp.clipping_norm [AUTH: 01 \u00a717; 00 \u00a78.3]",
+      "execution_binding": "src.training.production:train_production_lora",
       "gate": "P0-PRE",
       "model_alias": "qwen3_5_4b_base",
-      "readiness": "MISSING_EXECUTION_BINDING",
+      "readiness": "BLOCKED_BY_UNCALIBRATED_CONSTANT",
       "resolved_config_sha256": "4959a6bc073496eff53b1b1ed09bff362f95af406c2d9796de462e08e4d7e627",
       "seed": 101,
       "stage": "S06-TRAIN",
@@ -244,11 +244,11 @@
         "stage.P0-PRE",
         "stage.P0-0"
       ],
-      "detail": "matched no-canary control [AUTH: 00 \u00a77.5]",
-      "execution_binding": "src.training.trainer:train_production_lora",
+      "detail": "matched no-canary control [AUTH: 00 \u00a77.5]; the execution binding exists; 11 material constant(s) are still REQUIRED_NOT_CALIBRATED, first dp.clipping_norm [AUTH: 01 \u00a717; 00 \u00a78.3]",
+      "execution_binding": "src.training.production:train_production_lora",
       "gate": "P0-PRE",
       "model_alias": "qwen3_5_4b_base",
-      "readiness": "MISSING_EXECUTION_BINDING",
+      "readiness": "BLOCKED_BY_UNCALIBRATED_CONSTANT",
       "resolved_config_sha256": "6409bb002ae13425a582a9b1d980df89407c4e073ceecd2bb140dd4d23baa162",
       "seed": 101,
       "stage": "S06-TRAIN",
@@ -261,11 +261,11 @@
         "stage.P0-PRE",
         "stage.P0-0"
       ],
-      "detail": "canary-containing calibration seed [AUTH: 00 \u00a77.5]",
-      "execution_binding": "src.training.trainer:train_production_lora",
+      "detail": "canary-containing calibration seed [AUTH: 00 \u00a77.5]; the execution binding exists; 11 material constant(s) are still REQUIRED_NOT_CALIBRATED, first dp.clipping_norm [AUTH: 01 \u00a717; 00 \u00a78.3]",
+      "execution_binding": "src.training.production:train_production_lora",
       "gate": "P0-PRE",
       "model_alias": "qwen3_5_4b_base",
-      "readiness": "MISSING_EXECUTION_BINDING",
+      "readiness": "BLOCKED_BY_UNCALIBRATED_CONSTANT",
       "resolved_config_sha256": "86553df0809f11a0ac3fe98440645acd2d0606dac5e115f06f4cf98adfb9fae1",
       "seed": 202,
       "stage": "S06-TRAIN",
@@ -278,11 +278,11 @@
         "stage.P0-PRE",
         "stage.P0-0"
       ],
-      "detail": "matched no-canary control [AUTH: 00 \u00a77.5]",
-      "execution_binding": "src.training.trainer:train_production_lora",
+      "detail": "matched no-canary control [AUTH: 00 \u00a77.5]; the execution binding exists; 11 material constant(s) are still REQUIRED_NOT_CALIBRATED, first dp.clipping_norm [AUTH: 01 \u00a717; 00 \u00a78.3]",
+      "execution_binding": "src.training.production:train_production_lora",
       "gate": "P0-PRE",
       "model_alias": "qwen3_5_4b_base",
-      "readiness": "MISSING_EXECUTION_BINDING",
+      "readiness": "BLOCKED_BY_UNCALIBRATED_CONSTANT",
       "resolved_config_sha256": "7a45a702628ec0d7077fb674712b777b4163d2e7151eedb1b790eabe89007746",
       "seed": 202,
       "stage": "S06-TRAIN",
@@ -295,11 +295,11 @@
         "stage.P0-PRE",
         "stage.P0-0"
       ],
-      "detail": "canary-containing calibration seed [AUTH: 00 \u00a77.5]",
-      "execution_binding": "src.training.trainer:train_production_lora",
+      "detail": "canary-containing calibration seed [AUTH: 00 \u00a77.5]; the execution binding exists; 11 material constant(s) are still REQUIRED_NOT_CALIBRATED, first dp.clipping_norm [AUTH: 01 \u00a717; 00 \u00a78.3]",
+      "execution_binding": "src.training.production:train_production_lora",
       "gate": "P0-PRE",
       "model_alias": "qwen3_5_4b_base",
-      "readiness": "MISSING_EXECUTION_BINDING",
+      "readiness": "BLOCKED_BY_UNCALIBRATED_CONSTANT",
       "resolved_config_sha256": "6c3fae0e4cfa673d7e8ab03eea5f575fcc4b04083f73d65500095c4d9fee56df",
       "seed": 303,
       "stage": "S06-TRAIN",
@@ -312,11 +312,11 @@
         "stage.P0-PRE",
         "stage.P0-0"
       ],
-      "detail": "matched no-canary control [AUTH: 00 \u00a77.5]",
-      "execution_binding": "src.training.trainer:train_production_lora",
+      "detail": "matched no-canary control [AUTH: 00 \u00a77.5]; the execution binding exists; 11 material constant(s) are still REQUIRED_NOT_CALIBRATED, first dp.clipping_norm [AUTH: 01 \u00a717; 00 \u00a78.3]",
+      "execution_binding": "src.training.production:train_production_lora",
       "gate": "P0-PRE",
       "model_alias": "qwen3_5_4b_base",
-      "readiness": "MISSING_EXECUTION_BINDING",
+      "readiness": "BLOCKED_BY_UNCALIBRATED_CONSTANT",
       "resolved_config_sha256": "35d08023c19cf26ced856c3c1229022c0d9eb1a0be031da3ea581c3b197db768",
       "seed": 303,
       "stage": "S06-TRAIN",
@@ -328,11 +328,11 @@
       "depends_on": [
         "stage.P0-PRE"
       ],
-      "detail": "representative DP arm; the accountant is src.dp.mechanism.account",
-      "execution_binding": "src.training.trainer:train_production_lora",
+      "detail": "representative DP arm; the accountant is src.dp.mechanism.account; the execution binding exists; 11 material constant(s) are still REQUIRED_NOT_CALIBRATED, first dp.clipping_norm [AUTH: 01 \u00a717; 00 \u00a78.3]",
+      "execution_binding": "src.training.production:train_production_lora",
       "gate": "P0-PRE",
       "model_alias": "qwen3_5_4b_base",
-      "readiness": "MISSING_EXECUTION_BINDING",
+      "readiness": "BLOCKED_BY_UNCALIBRATED_CONSTANT",
       "resolved_config_sha256": "ec88fecd29fdea253f429c1f7ca8d63cbcf69aca4180a74e98564c7ce37ee14a",
       "seed": 101,
       "stage": "S06-TRAIN-DP",
@@ -344,11 +344,11 @@
       "depends_on": [
         "stage.P0-PRE"
       ],
-      "detail": "representative DP arm; the accountant is src.dp.mechanism.account",
-      "execution_binding": "src.training.trainer:train_production_lora",
+      "detail": "representative DP arm; the accountant is src.dp.mechanism.account; the execution binding exists; 11 material constant(s) are still REQUIRED_NOT_CALIBRATED, first dp.clipping_norm [AUTH: 01 \u00a717; 00 \u00a78.3]",
+      "execution_binding": "src.training.production:train_production_lora",
       "gate": "P0-PRE",
       "model_alias": "qwen3_5_4b_base",
-      "readiness": "MISSING_EXECUTION_BINDING",
+      "readiness": "BLOCKED_BY_UNCALIBRATED_CONSTANT",
       "resolved_config_sha256": "e5506e56cf7e7edfcd39288f1d1e3356f0106477dc0100d42067146576222070",
       "seed": 202,
       "stage": "S06-TRAIN-DP",
@@ -360,11 +360,11 @@
       "depends_on": [
         "stage.P0-PRE"
       ],
-      "detail": "representative DP arm; the accountant is src.dp.mechanism.account",
-      "execution_binding": "src.training.trainer:train_production_lora",
+      "detail": "representative DP arm; the accountant is src.dp.mechanism.account; the execution binding exists; 11 material constant(s) are still REQUIRED_NOT_CALIBRATED, first dp.clipping_norm [AUTH: 01 \u00a717; 00 \u00a78.3]",
+      "execution_binding": "src.training.production:train_production_lora",
       "gate": "P0-PRE",
       "model_alias": "qwen3_5_4b_base",
-      "readiness": "MISSING_EXECUTION_BINDING",
+      "readiness": "BLOCKED_BY_UNCALIBRATED_CONSTANT",
       "resolved_config_sha256": "d760f82a74210c28582deb3428737352dece81869c95226e3ff5b5e063f0190f",
       "seed": 303,
       "stage": "S06-TRAIN-DP",
@@ -915,5 +915,18 @@
       "stage": "P1",
       "task_id": "analysis.bootstrap_intervals"
     }
+  ],
+  "uncalibrated_constants": [
+    "dp.clipping_norm",
+    "dp.delta",
+    "dp.noise_multiplier",
+    "lora.batch_size",
+    "lora.epochs",
+    "lora.gradient_accumulation_steps",
+    "lora.gradient_clipping_norm",
+    "lora.learning_rate",
+    "lora.optimizer",
+    "lora.precision",
+    "lora.sequence_length"
   ]
 }

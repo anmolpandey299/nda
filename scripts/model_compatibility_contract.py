@@ -62,6 +62,7 @@ from src.backend.compatibility import (  # noqa: E402
 from src.backend.dp import build_dp_plan, dp_role_for  # noqa: E402
 from src.backend.evidence import (  # noqa: E402
     BACKEND_NOT_INSTALLED,
+    CHECKPOINT_NOT_ACQUIRED,
     MODEL_REVISION_NOT_FROZEN,
     NO_PARAMETER_NAMES,
     STRUCTURAL_CHECK_FAILED,
@@ -79,6 +80,7 @@ from src.backend.scoring_backend import backend_code_hash  # noqa: E402
 from src.materials import material  # noqa: E402
 from src.provenance.config import resolve_config  # noqa: E402
 from src.provenance.hashing import sha256_canonical  # noqa: E402
+from src.provenance.model_manifest import FIXTURE_ROLE  # noqa: E402
 
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -176,6 +178,17 @@ def run_contract_for(
         detail = "NOT_RUN(BACKEND_NOT_INSTALLED): torch/transformers resolve on the H100 image"
         results.append(not_run("model_loads", BACKEND_NOT_INSTALLED, detail))
         results.append(not_run("bf16_text_only_forward", BACKEND_NOT_INSTALLED, detail))
+    elif str(entry.get("role", "")) == FIXTURE_ROLE:
+        # A fixture carries a well-formed revision but no acquired weights, so on an image
+        # where transformers resolves, `from_pretrained` would treat its model id as a Hub
+        # repository and reach the network. A contract run downloads nothing: the row is
+        # NOT_RUN because the checkpoint was never acquired [AUTH: 01 §8G, §12; 02 §C6].
+        detail = (
+            "NOT_RUN(CHECKPOINT_NOT_ACQUIRED): this entry is a test fixture, not a research"
+            " checkpoint; the contract never fetches a model to close a row"
+        )
+        results.append(not_run("model_loads", CHECKPOINT_NOT_ACQUIRED, detail))
+        results.append(not_run("bf16_text_only_forward", CHECKPOINT_NOT_ACQUIRED, detail))
     elif not evidentiary:
         detail = "NOT_RUN(MODEL_REVISION_NOT_FROZEN): the checkpoint has not been acquired"
         results.append(not_run("model_loads", MODEL_REVISION_NOT_FROZEN, detail))

@@ -36,12 +36,14 @@ from src.backend.compatibility import (
     check_h100_profile,
     check_scorer_determinism,
 )
-from src.backend.dp import DPBackendError, build_dp_plan, dp_role_for, opacus_available
+from src.backend.dp import DPBackendError, build_dp_plan, dp_role_for
 from src.backend.evidence import (
+    BACKEND_NOT_INSTALLED,
     CHECKPOINT_NOT_ACQUIRED,
     FAIL,
     NO_H100,
     NOT_RUN,
+    NOT_RUN_REASONS,
     PASS,
     RunBinding,
     structural_problems,
@@ -138,12 +140,14 @@ def _fixture_outcome(tmp_path: Path, **overrides: object) -> object:
 def test_c27_every_cpu_decidable_check_passes_against_the_local_fixture(
     tmp_path: Path,
 ) -> None:
-    """Eleven of the thirteen checks are decidable here, and all eleven pass.
+    """Ten of the thirteen checks are decidable from the fixture alone, and all ten pass.
 
-    `model_loads` and `bf16_text_only_forward` need transformers, and
-    `h100_profile_collectable` closes only on real H100 hardware. Because a NOT_RUN row can
-    never contribute to a PASS, the overall outcome is NOT_RUN — the honest state on this
-    machine [AUTH: 02 §C6].
+    The other three are stated so they hold on both lanes. `model_loads` and
+    `bf16_text_only_forward` are NOT_RUN either because transformers is absent (CPU/dev) or
+    because a fixture checkpoint is never acquired (H100 image) — the contract downloads
+    nothing to close a row. `h100_profile_collectable` is NOT_RUN(NO_H100) without an
+    accelerator and PASSes on a real H100. Either way a NOT_RUN row can never contribute to a
+    PASS, so the contract is NOT_RUN against a fixture on every lane [AUTH: 02 §C6].
     """
     outcome = _fixture_outcome(tmp_path)
     assert [r.name for r in outcome.results] == list(CONTRACT_CHECKS)  # type: ignore[attr-defined]
@@ -155,9 +159,14 @@ def test_c27_every_cpu_decidable_check_passes_against_the_local_fixture(
     failing = [(n, by_name[n].detail) for n in decidable if by_name[n].status != PASS]
     assert not failing, failing
 
-    for name in unavailable:
-        assert by_name[name].status == NOT_RUN
-        assert by_name[name].reason in {"BACKEND_NOT_INSTALLED", NO_H100}
+    for name in ("model_loads", "bf16_text_only_forward"):
+        assert by_name[name].status == NOT_RUN, "a fixture is never loaded, on any lane"
+        assert by_name[name].reason in {BACKEND_NOT_INSTALLED, CHECKPOINT_NOT_ACQUIRED}
+
+    profile = by_name["h100_profile_collectable"]
+    assert profile.status in {NOT_RUN, PASS}
+    if profile.status == NOT_RUN:
+        assert profile.reason == NO_H100
 
     assert outcome.status == NOT_RUN  # type: ignore[attr-defined]
     assert outcome.exit_code == 1  # type: ignore[attr-defined]
@@ -378,7 +387,7 @@ def test_r20_case2_the_real_cli_writes_verifiable_fixture_evidence(tmp_path: Pat
             "evidence.json",
         ]
     )
-    assert code == 1, "torch and the H100 remain unavailable, so the contract is NOT_RUN"
+    assert code == 1, "a fixture checkpoint is never acquired, so the contract is NOT_RUN"
 
     written = root / "evidence.json"
     assert written.is_file()
@@ -390,8 +399,11 @@ def test_r20_case2_the_real_cli_writes_verifiable_fixture_evidence(tmp_path: Pat
     assert structural_problems(document) == []
 
     reasons = {row["reason"] for row in document["checks"] if row["status"] == NOT_RUN}
-    assert reasons and "BACKEND_NOT_INSTALLED" in reasons
-    assert NO_H100 in reasons
+    # Which reason closes the load rows is a property of the lane, not of the evidence
+    # format: transformers is absent here and present on the H100 image, where a fixture is
+    # still never fetched. Both are registered NOT_RUN reasons, and neither is a PASS.
+    assert reasons & {BACKEND_NOT_INSTALLED, CHECKPOINT_NOT_ACQUIRED}
+    assert reasons <= set(NOT_RUN_REASONS)
     assert all(row["reason"] for row in document["checks"] if row["status"] == NOT_RUN)
 
     binding = RunBinding(**{k: document[k] for k in _BINDING_FIELDS})
@@ -619,10 +631,20 @@ def test_a_non_sample_level_adjacency_cannot_reach_the_backend_at_all() -> None:
     assert "UNSUPPORTED_ADJACENCY" in source and "SAMPLE_LEVEL_ADJACENCY" in source
 
 
-def test_the_dp_check_is_not_run_rather_than_pass_without_opacus() -> None:
+def test_the_dp_check_is_not_run_rather_than_pass_without_an_executed_dp_step() -> None:
+    """A DP-role row is NOT_RUN on both lanes, and never PASS.
+
+    The distinction the DP contract rests on is "not executed" versus "passed", and it does
+    not depend on whether opacus imports: this lane has no opacus, and the H100 image has
+    opacus but still runs no DP step during the contract. Asserting the absence of opacus
+    would test the machine rather than the contract [AUTH: 02 §C6].
+    """
     plan = build_dp_plan(REPO_ROOT, _mechanism(), model_alias="llama_3_2_3b")
     result = check_dp_requirement("DP_PRIMARY", plan)
-    assert result.status == NOT_RUN
+    assert result.status == NOT_RUN and result.status != PASS
     assert result.reason == "OPACUS_BACKEND_NOT_INSTALLED"
-    assert opacus_available() is False
+
+    # The rest of the row's contract, which no lane changes: a DP role with no plan is a
+    # FAIL rather than a quiet NOT_RUN, and only a model with no DP role passes outright.
+    assert check_dp_requirement("DP_PRIMARY", None).status == FAIL
     assert check_dp_requirement(None, None).status == PASS

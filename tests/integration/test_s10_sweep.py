@@ -15,11 +15,13 @@ import pytest
 from src.experiments.gates import GateState
 from src.experiments.registry import CALIBRATION_SEEDS, load_registry
 from src.experiments.sweep import (
+    BLOCKED_BY_UNCALIBRATED_CONSTANT,
     MISSING_EXECUTION_BINDING,
     READINESS_CLASSES,
     TRAINING_BINDING,
     build_sweep_plan,
     readiness_audit,
+    uncalibrated_training_constants,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -87,14 +89,46 @@ def test_both_canary_and_matched_control_arms_are_planned(unresolved: GateState)
         assert f"train.qwen3_5_4b_base.control.{seed}" in ids
 
 
-def test_the_missing_training_binding_is_reported_not_hidden(unresolved: GateState) -> None:
-    """The production LoRA trainer does not exist yet, and the plan says so."""
+def test_every_execution_binding_now_exists(unresolved: GateState) -> None:
+    """No task names a binding that has not been written [AUTH: 01 §16]."""
+    import importlib
+
     plan = build_sweep_plan(ROOT, state=unresolved)
-    assert not plan.ready
-    assert TRAINING_BINDING in plan.missing_bindings
-    missing = plan.by_readiness(MISSING_EXECUTION_BINDING)
-    assert missing, "the plan must name the tasks that have no binding"
-    assert all(task.kind == "ADAPTER" for task in missing)
+    assert plan.missing_bindings == ()
+    assert plan.by_readiness(MISSING_EXECUTION_BINDING) == ()
+    assert plan.ready
+
+    for task in plan.tasks:
+        if task.execution_binding.startswith("("):
+            continue  # STRUCTURAL_NA carries no binding by design
+        module_name, symbol = task.execution_binding.split(":")
+        module = importlib.import_module(module_name)
+        assert hasattr(module, symbol), f"{task.task_id} names a binding that does not exist"
+
+
+def test_the_production_trainer_is_the_bound_adapter_producer(unresolved: GateState) -> None:
+    plan = build_sweep_plan(ROOT, state=unresolved)
+    adapters = [t for t in plan.tasks if t.kind == "ADAPTER"]
+    assert len(adapters) == 9, "6 canary/control + 3 DP jobs"
+    assert {t.execution_binding for t in adapters} == {TRAINING_BINDING}
+
+
+def test_uncalibrated_constants_block_execution_without_hiding_the_binding(
+    unresolved: GateState,
+) -> None:
+    """A frozen-constant gap is reported as itself, not as missing code.
+
+    While `configs/training/**` still carries REQUIRED_NOT_CALIBRATED values the study cannot
+    start, but the reason is a scientific freeze, not absent execution code [AUTH: 01 §17].
+    """
+    plan = build_sweep_plan(ROOT, state=unresolved)
+    blocked = plan.by_readiness(BLOCKED_BY_UNCALIBRATED_CONSTANT)
+    unfrozen = uncalibrated_training_constants(ROOT)
+    assert (plan.uncalibrated == unfrozen) and (bool(blocked) == bool(unfrozen))
+    assert plan.executable is (not unfrozen)
+    assert all(task.kind == "ADAPTER" for task in blocked)
+    # The distinction the classes exist to preserve.
+    assert plan.ready and not plan.executable if unfrozen else plan.executable
 
 
 def test_the_audit_agrees_with_the_plan(unresolved: GateState) -> None:
@@ -114,11 +148,14 @@ def _cli(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_execute_full_refuses_while_a_binding_is_missing() -> None:
-    """A sweep that starts with a hole in it hides its own gaps [AUTH: 01 §16]."""
+def test_execute_full_refuses_while_a_constant_is_uncalibrated() -> None:
+    """The sweep will not start on defaulted science [AUTH: 01 §17; 00 §8.3]."""
     completed = _cli("execute-full")
     assert completed.returncode == 1
-    assert TRAINING_BINDING in completed.stderr
+    assert "REQUIRED_NOT_CALIBRATED" in completed.stderr
+    assert "Nothing was run" in completed.stderr
+    for constant in uncalibrated_training_constants(ROOT):
+        assert constant in completed.stderr, "the refusal names every unfrozen constant"
 
 
 def test_plan_full_is_side_effect_free() -> None:

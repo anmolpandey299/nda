@@ -193,7 +193,7 @@ def load_causal_lm(plan: LoadPlan) -> Any:
         raise LoaderError("; ".join(plan.refusals))
 
     import torch  # noqa: PLC0415
-    from transformers import (  # type: ignore[import-not-found] # noqa: PLC0415
+    from transformers import (  # noqa: PLC0415
         AutoModelForCausalLM,
     )
 
@@ -205,7 +205,7 @@ def load_causal_lm(plan: LoadPlan) -> Any:
         )
     kwargs = plan.from_pretrained_kwargs()
     kwargs["dtype"] = getattr(torch, plan.dtype)
-    model = AutoModelForCausalLM.from_pretrained(plan.model_id, **kwargs)
+    model: Any = AutoModelForCausalLM.from_pretrained(plan.model_id, **kwargs)
     resolved = str(next(model.parameters()).dtype).removeprefix("torch.")
     if resolved != plan.dtype:
         raise LoaderError(

@@ -26,6 +26,7 @@ from src.backend.scoring_backend import LogitsSource, TokenBatch
 from src.backend.settings import backend_settings
 from src.backend.tokenization import TokenizerIdentity, resolve_tokenizer_identity
 from src.materials import material_text
+from src.provenance.model_manifest import FIXTURE_ROLE
 
 Matrix = NDArray[Any]
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -108,7 +109,10 @@ def fixture_panel_entry(*, revision: Any = FIXTURE_REVISION, **overrides: Any) -
         "revision": revision,
         "architecture_family": "tiny_fixture",
         "base_or_instruct": "base",
-        "role": "TEST_FIXTURE_NOT_A_RESEARCH_SUBJECT",
+        # The production role constant, not a copy of its text: the compatibility contract
+        # keys its "never fetch a fixture from the Hub" guard on exactly this value, so the
+        # two must not be able to drift apart.
+        "role": FIXTURE_ROLE,
         "config_sha256": "a" * 64,
         "tokenizer_sha256": "b" * 64,
         "weight_file_sha256": "c" * 64,

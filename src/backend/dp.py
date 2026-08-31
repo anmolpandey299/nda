@@ -145,7 +145,7 @@ def attach_grad_sample_module(model: Any, plan: DPBackendPlan) -> Any:
         raise DPBackendError(
             f"{DP_BACKEND_NOT_RUN}: opacus is resolved on the H100 image and is absent here"
         )
-    from opacus import GradSampleModule  # type: ignore[import-not-found] # noqa: PLC0415
+    from opacus import GradSampleModule  # noqa: PLC0415
 
     if plan.engine != "opacus.GradSampleModule":
         raise DPBackendError(f"the resolved DP engine is {plan.engine!r}")

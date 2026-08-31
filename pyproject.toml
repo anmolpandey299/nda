@@ -84,10 +84,14 @@ strict = true
 warn_unused_configs = true
 exclude = "(^|/)(specs|reviews|stage_acceptance)/"
 
-# torch is CUDA-coupled and is absent from the S00-A CPU/dev lock; the gpu_smoke lane imports
-# it only behind a runtime availability guard [AUTH: 03 §8; plan §5.2].
+# The CUDA-coupled science set is absent from the S00-A CPU/dev lock and resolved only on the
+# H100 image; every import of it sits behind a runtime availability guard [AUTH: 03 §8;
+# plan §5.2]. It therefore fails typecheck differently on the two lanes — not found here,
+# installed-but-untyped (opacus) or fully typed (transformers) there — so the suppression has
+# to live here rather than as an inline code list that is stale on whichever lane it is not
+# written for. Scope is these modules only; no check is relaxed for our own code.
 [[tool.mypy.overrides]]
-module = ["torch"]
+module = ["torch", "opacus", "transformers", "peft"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

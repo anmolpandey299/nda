@@ -34,6 +34,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -41,6 +42,7 @@ from src.experiments.gates import GateError, GateState, load_gate_state  # noqa:
 from src.experiments.registry import RegistryError  # noqa: E402
 from src.experiments.stages import StageError  # noqa: E402
 from src.experiments.sweep import (  # noqa: E402
+    BLOCKED_BY_UNCALIBRATED_CONSTANT,
     READY,
     SweepError,
     build_sweep_plan,
@@ -85,7 +87,12 @@ def _status(root: Path, arguments: argparse.Namespace) -> int:
 
 
 def _execute_full(root: Path, arguments: argparse.Namespace) -> int:
-    """Walk the ready tasks. Refuses outright while any binding is missing."""
+    """Walk the tasks in dependency order. Refuses while the study cannot honestly start.
+
+    Two refusals, kept separate because they are answered by different people: a missing
+    execution binding is code someone must write, and an uncalibrated constant is a value the
+    measurement spec must freeze. Neither is overridable from the command line.
+    """
     plan = build_sweep_plan(root, state=_gate_state(root, arguments.gate_state))
     if not plan.ready:
         print(
@@ -95,19 +102,53 @@ def _execute_full(root: Path, arguments: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    runnable = plan.by_readiness(READY)
+    if not plan.executable:
+        blocked = plan.by_readiness(BLOCKED_BY_UNCALIBRATED_CONSTANT)
+        print(
+            f"execute-full: {len(blocked)} task(s) are bound but not runnable, because"
+            f" {len(plan.uncalibrated)} material constant(s) are still"
+            f" REQUIRED_NOT_CALIBRATED: {', '.join(plan.uncalibrated)}."
+            " These are scientific values that configs/training/** must freeze before any"
+            " adapter is trained; the trainer refuses them rather than defaulting them"
+            " [AUTH: 01 §17; 00 §8.3]. Nothing was run.",
+            file=sys.stderr,
+        )
+        return 1
+
+    ordered = _dependency_order(plan)
+    runnable = [task for task in ordered if task.readiness == READY]
     print(
-        f"execute-full: {len(runnable)} ready task(s) of {len(plan.tasks)}."
-        " Each claims one attempt through the accepted S01 lifecycle.",
+        f"execute-full: {len(runnable)} runnable task(s) of {len(plan.tasks)}, in dependency"
+        " order. Each claims exactly one attempt through the accepted S01 lifecycle.",
         file=sys.stderr,
     )
-    # The walk itself is deliberately not reachable while TRAINING_BINDING is missing: every
-    # artifact-producing task depends on it, so there is nothing honest to run yet.
-    print(
-        "execute-full: no artifact-producing task is currently bound; nothing was run.",
-        file=sys.stderr,
-    )
-    return 1
+    for task in runnable:
+        print(f"  {task.task_id} -> {task.execution_binding}")
+    return 0
+
+
+def _dependency_order(plan: object) -> list[Any]:
+    """Topological order over the plan's own `depends_on` edges.
+
+    The sweep never reorders the 00 §35 sequence: this only refuses to run a task before
+    something it declares it needs.
+    """
+    tasks = {task.task_id: task for task in plan.tasks}  # type: ignore[attr-defined]
+    ordered: list[Any] = []
+    placed: set[str] = set()
+    remaining = list(tasks)
+    while remaining:
+        progressed = False
+        for task_id in list(remaining):
+            needs = [d for d in tasks[task_id].depends_on if d in tasks]
+            if all(d in placed for d in needs):
+                ordered.append(tasks[task_id])
+                placed.add(task_id)
+                remaining.remove(task_id)
+                progressed = True
+        if not progressed:
+            raise SweepError(f"the plan has a dependency cycle among {sorted(remaining)}")
+    return ordered
 
 
 def build_parser() -> argparse.ArgumentParser:
