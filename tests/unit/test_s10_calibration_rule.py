@@ -11,12 +11,15 @@ import pytest
 from src.training.calibration import (
     BATCH_SIZES,
     EPOCHS,
+    GRADIENT_NORM_SOURCE,
     LEARNING_RATES,
+    PROTECTED_PARTITIONS,
     CalibrationError,
     GridMeasurement,
     GridPoint,
     calibration_grid,
     feasible,
+    require_public_gradient_source,
     resolve_delta,
     resolve_dp_constants,
     resolve_sequence_length,
@@ -112,25 +115,56 @@ def test_the_dp_constants_are_derived_from_the_frozen_epsilon_not_invented() -> 
 
     resolved = resolve_dp_constants(
         target_epsilon=8.0,
-        training_set_size=30_000,
+        protected_training_set_size=30_000,
         batch_size=8,
         epochs=2,
         clipping_norm=1.0,
     )
-    assert set(resolved) == {"delta", "clipping_norm", "noise_multiplier"}
-    assert resolved["noise_multiplier"] > 0
+    assert {"delta", "clipping_norm", "noise_multiplier"} <= set(resolved)
+    assert resolved["delta_n_definition"] == "PROTECTED_TRAINING_SET_SIZE"
+    assert resolved["gradient_norm_source"] == "CALIBRATION_NONMEMBERS"
+    sigma = float(str(resolved["noise_multiplier"]))
+    assert sigma > 0
 
     from src.dp.mechanism import poisson_sample_rate, steps_for
 
     achieved = account(
         DPMechanism(
             adjacency="SAMPLE_LEVEL_ADD_REMOVE_ONE_RECORD",
-            delta=resolved["delta"],
-            clipping_norm=resolved["clipping_norm"],
-            noise_multiplier=resolved["noise_multiplier"],
+            delta=float(str(resolved["delta"])),
+            clipping_norm=float(str(resolved["clipping_norm"])),
+            noise_multiplier=sigma,
             sample_rate=poisson_sample_rate(batch_size=8, dataset_size=30_000),
             steps=steps_for(epochs=2, dataset_size=30_000, batch_size=8),
             dp_seed=101,
         )
     )
     assert achieved.achieved_epsilon <= 8.0, "the accountant meets the frozen 00 §8.2 target"
+
+
+def test_the_clipping_norm_may_not_be_fitted_to_protected_records() -> None:
+    """A clipping norm is a published DP hyperparameter, so its estimate must be public.
+
+    Fitting it to member gradient norms would push a statistic of the protected training set
+    into the released mechanism, where sigma is calibrated against it [AUTH: 00 §8.2, §8.3].
+    """
+    require_public_gradient_source(GRADIENT_NORM_SOURCE)
+
+    for protected in PROTECTED_PARTITIONS:
+        with pytest.raises(CalibrationError):
+            require_public_gradient_source(protected)
+    with pytest.raises(CalibrationError):
+        require_public_gradient_source("EVAL_NONMEMBERS")
+    with pytest.raises(CalibrationError):
+        require_public_gradient_source(GRADIENT_NORM_SOURCE, member_ids=("member-0001",))
+
+
+def test_delta_is_defined_on_the_protected_training_set_size() -> None:
+    """N is what the mechanism protects; a larger pool would understate delta."""
+    assert resolve_delta(20_000) > resolve_delta(200_000), (
+        "a smaller protected set must give a larger delta"
+    )
+    # monotone non-increasing in N, so mistaking a pool for the protected set can only ever
+    # understate delta — never overstate the guarantee
+    values = [resolve_delta(n) for n in (10_000, 30_000, 100_000, 300_000)]
+    assert values == sorted(values, reverse=True)

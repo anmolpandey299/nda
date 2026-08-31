@@ -11,9 +11,19 @@ mechanical, so the same measurements always select the same winner, and no one c
 configuration after seeing what it does to a privacy outcome [AUTH: 00 §34B.1A; 01 §3.2].
 
 What the rule is allowed to look at is deliberately narrow — training stability, training
-loss, held-out language-modelling loss, peak memory and wall-clock. Held-out loss here is
-utility only: it is computed on `EVAL_NONMEMBERS`, carries no membership label, and no
-score, threshold or privacy quantity is formed from it [AUTH: 00 §18].
+loss, held-out language-modelling loss, peak memory and wall-clock. No membership label,
+score, threshold or privacy quantity is formed from any of it [AUTH: 00 §18].
+
+Two data-source rules are science-critical, and are constants here rather than prose:
+
+* **the gradient-norm percentile is estimated on public non-member data only.** A clipping
+  norm fitted to the gradient norms of protected training examples is a statistic *of the
+  private set*, and it then travels into the DP mechanism as a public hyperparameter — the
+  released sigma would be calibrated to the very records DP is meant to protect. The
+  percentile is therefore taken on `CALIBRATION_NONMEMBERS` and never on member records.
+* **held-out utility is measured on `CALIBRATION_NONMEMBERS`, never `EVAL_NONMEMBERS`.**
+  Selecting a configuration on the evaluation split would put evaluation IDs into a
+  calibration decision [AUTH: 01 §23; 00 §34B.1].
 
 The DP constants are derived, not chosen: epsilon is already frozen at the 00 §8.2 target, and
 `src.dp.mechanism.calibrate_noise_multiplier` solves for the smallest sigma meeting it at the
@@ -49,10 +59,27 @@ MAX_WALL_CLOCK_SECONDS_PER_RUN: Final = 6 * 60 * 60
 GRADIENT_CLIP_PERCENTILE: Final = 95.0
 SEQUENCE_LENGTH_PERCENTILE: Final = 99.0
 
-#: delta = 1 / N^1.1, rounded down to one significant figure, where N is the real training-set
-#: size. 00 §8.2 fixes epsilon and is silent on delta; this is the standard "comfortably
-#: sub-1/N" convention, declared before N is known so it cannot be tuned to a result.
+#: The ONLY partition the gradient-norm percentile may be estimated on. Public non-member
+#: data: the clipping norm becomes a public DP hyperparameter, so fitting it to protected
+#: records would leak a statistic of the private set into the released mechanism.
+GRADIENT_NORM_SOURCE: Final = "CALIBRATION_NONMEMBERS"
+
+#: The ONLY partition held-out utility may be measured on. `EVAL_NONMEMBERS` is reserved for
+#: the realised-FPR measurement and must not enter a calibration decision [AUTH: 01 §23].
+HELDOUT_UTILITY_SOURCE: Final = "CALIBRATION_NONMEMBERS"
+
+#: Partitions that carry protected training records. Never a calibration input.
+PROTECTED_PARTITIONS: Final[tuple[str, ...]] = ("TRAIN_CANDIDATES", "NATURAL_MEMBER_EVAL")
+
+#: delta = 1 / N^1.1, rounded down to one significant figure.
+#:
+#: **N is the PROTECTED TRAINING-SET SIZE** — the number of records the DP mechanism actually
+#: protects (the natural records plus included canaries that the arm trains on), not the
+#: candidate-pool size, not the corpus size, and not the number of optimizer steps. 00 §8.2
+#: fixes epsilon and is silent on delta; this is the standard "comfortably sub-1/N"
+#: convention, declared before N is known so it cannot be tuned to a result.
 DELTA_EXPONENT: Final = 1.1
+DELTA_N_DEFINITION: Final = "PROTECTED_TRAINING_SET_SIZE"
 
 CALIBRATION_SEED: Final = 101
 
@@ -161,13 +188,20 @@ def select_winner(
     )
 
 
-def resolve_delta(training_set_size: int) -> float:
-    """delta = 1 / N^1.1, floored to one significant figure [PRE-DECLARED]."""
+def resolve_delta(protected_training_set_size: int) -> float:
+    """delta = 1 / N^1.1, floored to one significant figure [PRE-DECLARED].
+
+    `protected_training_set_size` is N: the number of records the DP mechanism protects, i.e.
+    what the arm actually trains on. Passing the candidate pool or the corpus size would make
+    delta smaller than the guarantee justifies.
+    """
     import math
 
-    if training_set_size <= 1:
-        raise CalibrationError("delta needs a real training-set size greater than one")
-    raw = 1.0 / (float(training_set_size) ** DELTA_EXPONENT)
+    if protected_training_set_size <= 1:
+        raise CalibrationError(
+            "delta needs the protected training-set size, which must exceed one record"
+        )
+    raw = 1.0 / (float(protected_training_set_size) ** DELTA_EXPONENT)
     exponent = math.floor(math.log10(raw))
     leading = math.floor(raw / (10.0**exponent))
     return float(leading * (10.0**exponent))
@@ -186,15 +220,36 @@ def resolve_sequence_length(token_lengths: Sequence[int], *, model_max_positions
     return int(min(power, model_max_positions))
 
 
+def require_public_gradient_source(partition: str, *, member_ids: Sequence[str] = ()) -> None:
+    """Refuse a gradient-norm estimate taken anywhere but the public non-member split.
+
+    This is a guard, not a comment: the clipping norm is published as part of the DP
+    mechanism, so an estimate contaminated by protected records would leak a statistic of the
+    private set no matter how the surrounding code is written.
+    """
+    if partition != GRADIENT_NORM_SOURCE:
+        raise CalibrationError(
+            f"the gradient-norm percentile may only be estimated on {GRADIENT_NORM_SOURCE};"
+            f" {partition!r} was supplied. A clipping norm fitted to protected records"
+            " becomes a public statistic of the private training set"
+        )
+    if member_ids:
+        raise CalibrationError(
+            f"{len(member_ids)} protected member id(s) reached the gradient-norm estimate,"
+            f" first {member_ids[0]!r}; the estimate must contain non-members only"
+        )
+
+
 def resolve_dp_constants(
     *,
     target_epsilon: float,
-    training_set_size: int,
+    protected_training_set_size: int,
     batch_size: int,
     epochs: int,
     clipping_norm: float,
+    gradient_norm_partition: str = GRADIENT_NORM_SOURCE,
     dp_seed: int = CALIBRATION_SEED,
-) -> dict[str, float]:
+) -> dict[str, JSONValue]:
     """Derive the three DP constants from the already-frozen epsilon row [AUTH: 00 §8.2].
 
     Nothing here invents a privacy target: epsilon is read from the frozen config and the
@@ -203,12 +258,14 @@ def resolve_dp_constants(
     """
     from src.dp.mechanism import calibrate_noise_multiplier, poisson_sample_rate, steps_for
 
-    delta = resolve_delta(training_set_size)
+    require_public_gradient_source(gradient_norm_partition)
+    size = protected_training_set_size
+    delta = resolve_delta(size)
     mechanism = calibrate_noise_multiplier(
         target_epsilon=target_epsilon,
         delta=delta,
-        sample_rate=poisson_sample_rate(batch_size=batch_size, dataset_size=training_set_size),
-        steps=steps_for(epochs=epochs, dataset_size=training_set_size, batch_size=batch_size),
+        sample_rate=poisson_sample_rate(batch_size=batch_size, dataset_size=size),
+        steps=steps_for(epochs=epochs, dataset_size=size, batch_size=batch_size),
         clipping_norm=clipping_norm,
         dp_seed=dp_seed,
     )
@@ -216,6 +273,9 @@ def resolve_dp_constants(
         "delta": delta,
         "clipping_norm": clipping_norm,
         "noise_multiplier": mechanism.noise_multiplier,
+        "delta_n_definition": DELTA_N_DEFINITION,
+        "protected_training_set_size": size,
+        "gradient_norm_source": gradient_norm_partition,
     }
 
 
